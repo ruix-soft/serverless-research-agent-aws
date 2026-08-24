@@ -3,6 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![AWS SAM](https://img.shields.io/badge/AWS%20SAM-Serverless-orange.svg)](https://aws.amazon.com/serverless/sam/)
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet-darkblue.svg)](https://aws.amazon.com/bedrock/)
+[![OpenAPI 3.0](https://img.shields.io/badge/OpenAPI-3.0.3-brightgreen.svg)](docs/openapi.yaml)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%7C%20DDD%20%7C%20CQRS-green.svg)](docs/architecture.md)
 [![Tests](https://img.shields.io/badge/Tests-93%20Passing-brightgreen.svg)](tests/)
 
@@ -135,6 +136,8 @@ serverless-research-agent-aws/
 
 ## 🚀 Especificación de la API REST
 
+> 📄 **Contrato OpenAPI 3.0:** Para consultar la especificación completa, esquemas de datos o importar el contrato en **Swagger UI** o **Postman**, revisa [`docs/openapi.yaml`](docs/openapi.yaml).
+
 ### 1. Iniciar Investigación
 * **Endpoint:** `POST /research`
 * **Código de Éxito:** `202 Accepted`
@@ -243,8 +246,10 @@ pytest -v
 
 ---
 
-## 📖 Registros de Decisiones de Arquitectura (ADRs)
+## 📚 Documentación Técnica & ADRs
 
-- [**ADR 0001:** Elección de Arquitectura Serverless-First para el Agente de Investigación](docs/adr/0001-use-serverless-ai-agent-architecture.md)
-- [**ADR 0002:** Patrón de Ejecución Asíncrona para Agentes de IA en AWS](docs/adr/0002-async-agent-execution.md)
-- [**ADR 0003:** Arquitectura en Dos Capas e Implementación de Patrones de Diseño](docs/adr/0003-two-layer-clean-architecture-and-design-patterns.md)
+- 📐 [**Arquitectura Detallada y Diagramas de Secuencia**](docs/architecture.md)
+- 📑 [**Especificación OpenAPI 3.0 (Contrato REST)**](docs/openapi.yaml)
+- 🏛️ [**ADR 0001:** Elección de Arquitectura Serverless-First para el Agente de Investigación](docs/adr/0001-use-serverless-ai-agent-architecture.md)
+- 🏛️ [**ADR 0002:** Patrón de Ejecución Asíncrona para Agentes de IA en AWS](docs/adr/0002-async-agent-execution.md)
+- 🏛️ [**ADR 0003:** Arquitectura en Dos Capas e Implementación de Patrones de Diseño](docs/adr/0003-two-layer-clean-architecture-and-design-patterns.md)
