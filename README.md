@@ -142,7 +142,8 @@ serverless-research-agent-aws/
 │       ├── 0003-two-layer-clean-architecture-and-design-patterns.md
 │       ├── 0004-distributed-rate-limiting-with-dynamodb.md
 │       ├── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
-│       └── 0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md
+│       ├── 0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md
+│       └── 0007-end-to-end-distributed-tracing-and-observability-with-aws-xray.md
 │
 ├── tests/                                # SUITE INTEGRAL DE PRUEBAS (118 Tests)
 │   ├── test_controllers.py
@@ -167,10 +168,51 @@ serverless-research-agent-aws/
 1. **Arquitectura Hexagonal (Ports & Adapters):** Aislamiento absoluto de la lógica de negocio. Los casos de uso y el dominio no conocen los SDKs de AWS (`boto3`) ni los frameworks de presentación.
 2. **Segregación de Responsabilidad de Comandos y Consultas (CQRS):** Separación limpia entre comandos que alteran estado (`CommandHandler`) y lecturas de datos ultrarrápidas (`QueryHandler`).
 3. **Cadena de Responsabilidad (Chain of Responsibility):** Todos los casos de uso se ejecutan como un pipeline secuencial de pasos atómicos (`Step[I, O, C]`) que operan sobre un contexto compartido (`Context`).
-4. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
-5. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
-6. **Autenticación sin Claves Estáticas (OpenID Connect - OIDC):** Despliegues seguros de CI/CD asumiendo roles temporales en AWS STS.
-7. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
+4. **Trazabilidad Distribuida y Observabilidad Activa (AWS X-Ray + Powertools):** Trazabilidad de extremo a extremo propagando el `X-Amzn-Trace-Id` desde API Gateway hacia Lambdas y Step Functions, con subsegmentos automáticos para cada paso de la cadena (`StepTracingDecorator`), métricas en formato EMF (`CommandMetricsDecorator` / `QueryMetricsDecorator`) y logs estructurados (`StepLoggingDecorator`).
+5. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
+6. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
+7. **Autenticación sin Claves Estáticas (OpenID Connect - OIDC):** Despliegues seguros de CI/CD asumiendo roles temporales en AWS STS.
+8. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
+
+---
+
+## 🔍 Observabilidad Distribuida de Extremo a Extremo (AWS X-Ray & CloudWatch)
+
+Toda la arquitectura cuenta con observabilidad activa integrada, permitiendo visualizar el flujo completo de ejecución desde la petición HTTP inicial hasta el razonamiento del LLM y la persistencia del reporte:
+
+```mermaid
+flowchart TD
+    Client(["👤 Cliente (curl / Frontend)"]) -->|HTTP POST /research| APIGW["🌐 Amazon API Gateway\n(TracingEnabled: true)"]
+    
+    APIGW -->|Invocación con Trace-ID| LambdaStart["⚡ StartResearchFunction\n(Tracing: Active)"]
+    
+    subgraph S1 ["🔍 Subsegmentos X-Ray (StepTracingDecorator)"]
+        LambdaStart --> StepV1["1️⃣ ValidateStartResearchStep"]
+        StepV1 --> StepI1["2️⃣ InvokeStateMachineStep"]
+        StepI1 --> StepB1["3️⃣ BuildStartResearchOutputStep"]
+    end
+    
+    StepI1 -->|states:StartExecution| SFN["⚙️ AWS Step Functions\n(Tracing: Enabled: true)"]
+    
+    subgraph SFN_States ["🔄 Trazas de la Máquina de Estados"]
+        SFN --> PutDDB["📥 PutJobInProgress (DynamoDB Direct SDK)"]
+        PutDDB --> WorkerTask["🚀 ExecuteResearchWorkerTask"]
+        WorkerTask --> CompleteDDB["💾 MarkJobAsCompleted (DynamoDB Direct SDK)"]
+    end
+    
+    WorkerTask -->|Invocación Lambda con Trace Context| WorkerLambda["⚡ ExecuteResearchWorkerFunction\n(Tracing: Active)"]
+    
+    subgraph S2 ["🔍 Subsegmentos X-Ray del Worker (StepTracingDecorator)"]
+        WorkerLambda --> StepWV["1️⃣ ValidateWorkerPayloadStep"]
+        StepWV --> StepWR["2️⃣ RunAgentReasoningStep\n(Bedrock AI + Tavily Search)"]
+        StepWR --> StepWP["3️⃣ PersistReportStorageStep\n(Amazon S3 PutObject)"]
+        StepWP --> StepWB["4️⃣ BuildWorkerOutputStep"]
+    end
+    
+    StepWR -.-> Bedrock["🧠 Amazon Bedrock (Inferencia LLM)"]
+    StepWR -.-> Tavily["🌐 Tavily Web Search API"]
+    StepWP -.-> S3Bucket["📦 Amazon S3 (Reports Bucket)"]
+```
 
 ---
 
@@ -237,3 +279,4 @@ sam deploy --guided
 - 🏛️ [**ADR 0004:** Control de Tasa Distribuido (Rate Limiting) con Amazon DynamoDB y Decoradores CQRS](docs/adr/0004-distributed-rate-limiting-with-dynamodb.md)
 - 🏛️ [**ADR 0005:** Solución Híbrida: Orquestación Resiliente con AWS Step Functions y Persistencia en DynamoDB](docs/adr/0005-hybrid-step-functions-and-dynamodb-orchestration.md)
 - 🏛️ [**ADR 0006:** CI/CD Enterprise con GitHub Actions y Autenticación OIDC (Zero Static Secrets)](docs/adr/0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md)
+- 🏛️ [**ADR 0007:** Trazabilidad Distribuida de Extremo a Extremo con AWS X-Ray y Decoradores de Cadena](docs/adr/0007-end-to-end-distributed-tracing-and-observability-with-aws-xray.md)

@@ -267,18 +267,21 @@ sequenceDiagram
 | **`start_research_handler`** | Presentación (`app/aws/`) | Handler Lambda para `POST /research`. Inicia el comando asíncrono. | AWS Lambda Event Bridge |
 | **`get_research_status_handler`** | Presentación (`app/aws/`) | Handler Lambda para `GET /research/{id}`. Consulta estado en DynamoDB. | AWS Lambda Event Bridge |
 | **`execute_research_worker_handler`**| Presentación (`app/aws/`) | Handler Lambda para ejecución de fondo del agente ReAct. | AWS Step Functions Task |
-| **`StartResearchController`** | Presentación (`app/controllers/`) | Orquestador CQRS del comando con Rate Limiting (`CommandRateLimitDecorator`) y Step Functions. | `ICommandHandler`, `RateLimiterService`, `IStateMachineInvokerPort` |
-| **`GetResearchStatusController`** | Presentación (`app/controllers/`) | Orquestador CQRS de la consulta con Rate Limiting (`QueryRateLimitDecorator`) y repositorio. | `IQueryHandler`, `RateLimiterService`, `IResearchJobRepository` |
-| **`ExecuteResearchWorkerController`**| Presentación (`app/controllers/`) | Orquestador CQRS del comando de ejecución del worker. | `ICommandHandler`, `LoggingDecorator`, `MetricsDecorator` |
-| **`StartResearchUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para iniciar el trabajo e invocar la máquina de estados. | `IStateMachineInvokerPort` |
-| **`GetResearchStatusUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para consultar estado en DynamoDB y generar URL presignada. | `IResearchJobRepository`, `IReportStoragePort` |
-| **`ExecuteResearchWorkerUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para coordinar razonamiento de IA y persistencia en S3. | `IResearchAgentPort`, `IReportStoragePort` |
+| **`StartResearchController`** | Presentación (`app/controllers/`) | Orquestador CQRS del comando con Rate Limiting (`CommandRateLimitDecorator`), `LoggingDecorator` y `CommandMetricsDecorator`. | `ICommandHandler`, `RateLimiterService`, `IStateMachineInvokerPort`, `ILoggerPort`, `ITracerPort`, `IMetricsPort` |
+| **`GetResearchStatusController`** | Presentación (`app/controllers/`) | Orquestador CQRS de la consulta con Rate Limiting (`QueryRateLimitDecorator`), `LoggingDecorator` y `QueryMetricsDecorator`. | `IQueryHandler`, `RateLimiterService`, `IResearchJobRepository`, `ILoggerPort`, `ITracerPort`, `IMetricsPort` |
+| **`ExecuteResearchWorkerController`**| Presentación (`app/controllers/`) | Orquestador CQRS del comando de ejecución con `LoggingDecorator` y `CommandMetricsDecorator`. | `ICommandHandler`, `ILoggerPort`, `ITracerPort`, `IMetricsPort` |
+| **`StartResearchUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para iniciar el trabajo con `StepTracingDecorator` y `StepLoggingDecorator`. | `IStateMachineInvokerPort`, `LoggerService`, `TracerService` |
+| **`GetResearchStatusUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para consultar estado en DynamoDB con `StepTracingDecorator` y `StepLoggingDecorator`. | `IResearchJobRepository`, `IReportStoragePort`, `LoggerService`, `TracerService` |
+| **`ExecuteResearchWorkerUseCase`** | Aplicación (`context/research/`) | Pipeline en cadena para coordinar razonamiento de IA con `StepTracingDecorator` y `StepLoggingDecorator`. | `IResearchAgentPort`, `IReportStoragePort`, `LoggerService`, `TracerService` |
 | **`DynamoDBJobRepositoryAdapter`**| Infraestructura (`context/research/`) | Adaptador concreto para persistir y consultar `ResearchJob` en DynamoDB. | `IResearchJobRepository` |
 | **`StepFunctionsInvokerAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto para iniciar ejecuciones en AWS Step Functions. | `IStateMachineInvokerPort` |
 | **`DynamoDBRateLimiterAdapter`**| Infraestructura (`context/research/`) | Adaptador concreto de Rate Limiting atómico con TTL en Amazon DynamoDB. | `RateLimiterService` (`context/kit/`) |
 | **`S3StorageAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto de persistencia usando Amazon S3 SDK (`boto3`). | `IReportStoragePort` |
 | **`BedrockAgentAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto del agente ReAct (Strands SDK + Bedrock + Tavily). | `IResearchAgentPort` |
-| **`InfrastructureFactory`** | Infraestructura (`context/research/`) | Fábrica abstracta para ensamblaje manual de todos los adaptadores. | `IInfrastructureFactory` |
+| **`PowertoolsTracerAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto de trazabilidad distribuida conectado a AWS X-Ray. | `ITracerPort`, `TracerService` (`context/kit/`) |
+| **`PowertoolsLoggerAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto de logging estructurado JSON para CloudWatch. | `ILoggerPort`, `LoggerService` (`context/kit/`) |
+| **`PowertoolsMetricsAdapter`**| Infraestructura (`context/research/`) | Adaptador concreto de métricas en formato EMF (*Embedded Metric Format*). | `IMetricsPort`, `MetricsService` (`context/kit/`) |
+| **`InfrastructureFactory`** | Infraestructura (`context/research/`) | Fábrica abstracta para ensamblaje manual e inyección de todos los adaptadores. | `IInfrastructureFactory` |
 
 ---
 
@@ -297,7 +300,7 @@ sequenceDiagram
     participant SAM as AWS SAM CLI & CloudFormation
 
     Dev->>GitHub: git push origin main
-    Note over GitHub: 1. Ejecuta Linting (flake8) y Pytest (114 Tests)
+    Note over GitHub: 1. Ejecuta Linting (flake8) y Pytest (118 Tests)
     Note over GitHub: 2. Valida plantilla SAM (sam validate --lint)
     
     rect rgb(240, 248, 255)
@@ -317,3 +320,51 @@ sequenceDiagram
         SAM-->>GitHub: Despliegue completado con éxito
     end
 ```
+
+---
+
+## 6. Observabilidad y Trazabilidad Distribuida de Extremo a Extremo (AWS X-Ray + Powertools)
+
+La arquitectura integra observabilidad de primer nivel mediante la activación de **AWS X-Ray Tracing Activo** en todas las funciones Lambda, Amazon API Gateway y AWS Step Functions, complementado con decoradores desacoplados en el núcleo de la aplicación:
+
+### Mapa de Trazabilidad Distribuida
+
+```mermaid
+flowchart TD
+    Client(["👤 Cliente (curl / Frontend)"]) -->|HTTP POST /research| APIGW["🌐 Amazon API Gateway\n(TracingEnabled: true)"]
+    
+    APIGW -->|Invocación con Trace-ID| LambdaStart["⚡ StartResearchFunction\n(Tracing: Active)"]
+    
+    subgraph S1 ["🔍 Subsegmentos X-Ray (StepTracingDecorator)"]
+        LambdaStart --> StepV1["1️⃣ ValidateStartResearchStep"]
+        StepV1 --> StepI1["2️⃣ InvokeStateMachineStep"]
+        StepI1 --> StepB1["3️⃣ BuildStartResearchOutputStep"]
+    end
+    
+    StepI1 -->|states:StartExecution| SFN["⚙️ AWS Step Functions\n(Tracing: Enabled: true)"]
+    
+    subgraph SFN_States ["🔄 Trazas de la Máquina de Estados"]
+        SFN --> PutDDB["📥 PutJobInProgress (DynamoDB Direct SDK)"]
+        PutDDB --> WorkerTask["🚀 ExecuteResearchWorkerTask"]
+        WorkerTask --> CompleteDDB["💾 MarkJobAsCompleted (DynamoDB Direct SDK)"]
+    end
+    
+    WorkerTask -->|Invocación Lambda con Trace Context| WorkerLambda["⚡ ExecuteResearchWorkerFunction\n(Tracing: Active)"]
+    
+    subgraph S2 ["🔍 Subsegmentos X-Ray del Worker (StepTracingDecorator)"]
+        WorkerLambda --> StepWV["1️⃣ ValidateWorkerPayloadStep"]
+        StepWV --> StepWR["2️⃣ RunAgentReasoningStep\n(Bedrock AI + Tavily Search)"]
+        StepWR --> StepWP["3️⃣ PersistReportStorageStep\n(Amazon S3 PutObject)"]
+        StepWP --> StepWB["4️⃣ BuildWorkerOutputStep"]
+    end
+    
+    StepWR -.-> Bedrock["🧠 Amazon Bedrock (Inferencia LLM)"]
+    StepWR -.-> Tavily["🌐 Tavily Web Search API"]
+    StepWP -.-> S3Bucket["📦 Amazon S3 (Reports Bucket)"]
+```
+
+### Características Principales de Observabilidad
+- **`StepTracingDecorator`:** Crea automáticamente subsegmentos en AWS X-Ray para cada paso de la cadena, capturando la duración en milisegundos y metadatos de respuesta (`result.value` o `result.error`).
+- **`StepLoggingDecorator`:** Genera logs estructurados JSON con el ciclo de vida del handler (`Handling...`, duración, `Handled successfully.`).
+- **`CommandMetricsDecorator` & `QueryMetricsDecorator`:** Emiten métricas automáticas en formato EMF (*Embedded Metric Format*) hacia CloudWatch (`invocations`, `errors`, `latency`) agrupadas por la dimensión del comando o consulta.
+- **Service Map & ServiceLens:** Visualización en vivo en la consola de AWS CloudWatch de todos los nodos interconectados con estados de salud y latencias en tiempo real.
