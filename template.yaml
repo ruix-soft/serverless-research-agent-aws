@@ -1,19 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Serverless Research Agent powered by Strands Agents SDK, Amazon Bedrock and S3.
+Description: Serverless Research Agent powered by Strands Agents SDK, Amazon Bedrock, AWS Lambda Powertools and S3.
 
 Globals:
   Function:
-    Timeout: 300
-    MemorySize: 1024
     Runtime: python3.12
     Architectures:
       - x86_64
     Environment:
       Variables:
         REPORTS_BUCKET_NAME: !Ref ReportsBucket
-        BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        TAVILY_API_KEY: "{{resolve:ssm:/serverless-research-agent/tavily-api-key:1}}"
+        POWERTOOLS_SERVICE_NAME: serverless-research-agent
+        POWERTOOLS_METRICS_NAMESPACE: ResearchAgent
+        LOG_LEVEL: INFO
 
 Resources:
   # 1. Bucket privado para almacenar los reportes de investigación
@@ -33,33 +32,65 @@ Resources:
             AllowedOrigins: ['*']
             MaxAge: 3600
 
-  # 2. Función Lambda del Agente Orquestador
-  ResearchAgentFunction:
+  # 2. Función Lambda para Iniciar Investigación (POST /research)
+  StartResearchFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: handler.lambda_handler
+      Handler: app.aws.handlers.start_research_handler.lambda_handler
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          WORKER_FUNCTION_NAME: !Ref ExecuteResearchWorkerFunction
       Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref ReportsBucket
-        - AmazonBedrockFullAccess
-        - AWSMarketplaceFullAccess
         - Statement:
             - Effect: Allow
               Action:
                 - lambda:InvokeFunction
-              Resource: "*"
+              Resource: !GetAtt ExecuteResearchWorkerFunction.Arn
       Events:
         StartResearchApi:
           Type: Api
           Properties:
             Path: /research
             Method: post
+
+  # 3. Función Lambda para Consultar Estado de Investigación (GET /research/{job_id})
+  GetResearchStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.aws.handlers.get_research_status_handler.lambda_handler
+      Timeout: 30
+      MemorySize: 256
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ReportsBucket
+      Events:
         GetResearchStatusApi:
           Type: Api
           Properties:
             Path: /research/{job_id}
             Method: get
+
+  # 4. Función Lambda Worker para Ejecutar Agente de IA en Segundo Plano
+  ExecuteResearchWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.aws.handlers.execute_research_worker_handler.lambda_handler
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          TAVILY_API_KEY: "{{resolve:ssm:/serverless-research-agent/tavily-api-key:1}}"
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+        - AmazonBedrockFullAccess
+        - AWSMarketplaceFullAccess
 
 Outputs:
   ResearchApiEndpoint:
