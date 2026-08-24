@@ -1,0 +1,67 @@
+openapi: 3.0.3
+info:
+  title: Serverless Research Agent API
+  description: API REST para solicitar investigaciones autónomas orquestadas por AWS Lambda, Amazon Bedrock y S3.
+  version: 1.0.0
+paths:
+  /research:
+    post:
+      summary: Iniciar una solicitud de investigación
+      operationId: startResearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResearchRequest'
+      responses:
+        '200':
+          description: Investigación completada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchResponse'
+        '400':
+          description: Payload inválido
+        '500':
+          description: Error interno en el orquestador
+components:
+  schemas:
+    ResearchRequest:
+      type: object
+      required:
+        - topic
+      properties:
+        topic:
+          type: string
+          example: "Tendencias de Inteligencia Artificial en AWS 2026"
+        depth:
+          type: string
+          enum: [quick, detailed, exhaustive]
+          default: detailed
+        format:
+          type: string
+          enum: [markdown, json]
+          default: markdown
+        search_limit:
+          type: integer
+          default: 5
+    ResearchResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "req-9842a1b3-4c5e-412d-88ab-9c12345678ab"
+        status:
+          type: string
+          example: "COMPLETED"
+        topic:
+          type: string
+        s3_report_url:
+          type: string
+          format: uri
+        execution_time_seconds:
+          type: number
+        created_at:
+          type: string
+          format: date-time

@@ -1,0 +1,8 @@
+{
+  "body": "{\"topic\": \"Tendencias de Inteligencia Artificial en AWS 2026\", \"depth\": \"detailed\", \"format\": \"markdown\", \"search_limit\": 5}",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "httpMethod": "POST",
+  "path": "/research"
+}
