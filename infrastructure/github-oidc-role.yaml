@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS IAM OIDC Provider and Role for GitHub Actions CI/CD Deployment (Zero Static Secrets)
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: "ruix-soft"
+    Description: GitHub organization or username owning the repository.
+  RepositoryName:
+    Type: String
+    Default: "serverless-research-agent-aws"
+    Description: GitHub repository name.
+
+Conditions:
+  # In most AWS accounts, the OIDC provider for token.actions.githubusercontent.com is created once.
+  # If needed, this template can deploy it or reference the existing one.
+  AlwaysTrue: !Equals [ "true", "true" ]
+
+Resources:
+  # 1. GitHub OIDC Identity Provider (si no existe previamente en la cuenta)
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: "https://token.actions.githubusercontent.com"
+      ClientIdList:
+        - "sts.amazonaws.com"
+      ThumbprintList:
+        # Standard GitHub Actions OIDC Thumbprints
+        - "6938fd4d98bab03faadb97b34396831e3780aea1"
+        - "1c58a3a8518e8759bf075b76b750d4f8d264fcd9"
+
+  # 2. IAM Role asumible exclusivamente por GitHub Actions desde este repositorio
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "GitHubActionsServerlessResearchAgentDeployRole"
+      Description: "Rol asumido por GitHub Actions via OIDC para desplegar Serverless Research Agent"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOIDCProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
+              StringEquals:
+                token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
+      Policies:
+        # 1. Permisos para CloudFormation y SAM CLI
+        - PolicyName: SAMCloudFormationDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ListStackResources
+                  - cloudformation:ListChangeSets
+                Resource:
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/serverless-research-agent/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-*/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*/*"
+
+        # 2. Permisos para S3 (Bucket de artefactos SAM y Bucket de Reportes)
+        - PolicyName: S3DeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketCors
+                  - s3:PutBucketCors
+                  - s3:GetBucketAcl
+                  - s3:PutBucketAcl
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - "arn:aws:s3:::aws-sam-cli-managed-*"
+                  - "arn:aws:s3:::aws-sam-cli-managed-*/*"
+                  - !Sub "arn:aws:s3:::serverless-research-agent-reports-${AWS::AccountId}-${AWS::Region}"
+                  - !Sub "arn:aws:s3:::serverless-research-agent-reports-${AWS::AccountId}-${AWS::Region}/*"
+
+        # 3. Permisos para AWS Lambda
+        - PolicyName: LambdaDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:GetPolicy
+                  - lambda:ListTags
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:PublishVersion
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:serverless-research-agent-*"
+
+        # 4. Permisos para Amazon DynamoDB
+        - PolicyName: DynamoDBDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/serverless-research-agent-*"
+
+        # 5. Permisos para AWS Step Functions
+        - PolicyName: StepFunctionsDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:CreateStateMachine
+                  - states:UpdateStateMachine
+                  - states:DeleteStateMachine
+                  - states:DescribeStateMachine
+                  - states:TagResource
+                  - states:UntagResource
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:serverless-research-agent-*"
+
+        # 6. Permisos para Amazon API Gateway
+        - PolicyName: ApiGatewayDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - apigateway:GET
+                  - apigateway:POST
+                  - apigateway:PUT
+                  - apigateway:PATCH
+                  - apigateway:DELETE
+                Resource:
+                  - "arn:aws:apigateway:*::/restapis"
+                  - "arn:aws:apigateway:*::/restapis/*"
+
+        # 7. Permisos para IAM (Creación de roles de ejecución de las Lambdas y Step Functions)
+        - PolicyName: IAMDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PassRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/serverless-research-agent-*"
+
+        # 8. Permiso para resolver Parameter Store
+        - PolicyName: SSMParameterReadPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/serverless-research-agent/*"
+
+Outputs:
+  RoleArn:
+    Description: "ARN del Rol IAM para configurar en GitHub Actions (AWS_ROLE_ARN)"
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+    Export:
+      Name: GitHubActionsDeployRoleArn
+  OIDCProviderArn:
+    Description: "ARN del Proveedor OIDC de GitHub"
+    Value: !Ref GitHubOIDCProvider
+

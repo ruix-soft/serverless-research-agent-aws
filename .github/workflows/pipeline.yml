@@ -1,0 +1,116 @@
+name: Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Permisos requeridos para OpenID Connect (OIDC) y lectura del repositorio
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # =========================================================================
+  # JOB 1: Calidad de Código, Linting y Pruebas Unitarias
+  # =========================================================================
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov flake8
+
+      - name: Run Flake8 Linter
+        run: |
+          flake8 src tests --count --statistics
+
+      - name: Run Pytest Suite (114 Tests)
+        run: |
+          pytest --verbose --cov=src tests/
+
+  # =========================================================================
+  # JOB 2: Validación Estática de Infraestructura SAM
+  # =========================================================================
+  sam-validation:
+    name: SAM Template Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Validate SAM Template
+        run: |
+          sam validate --lint
+
+  # =========================================================================
+  # JOB 3: Despliegue Automatizado a AWS con OIDC (Zero Static Secrets)
+  # =========================================================================
+  deploy:
+    name: Deploy to AWS (OIDC)
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, sam-validation]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Authenticate with AWS via OIDC (AssumeRoleWithWebIdentity)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'mx-central-1' }}
+          audience: "sts.amazonaws.com"
+          role-session-name: "GitHubActions-SAM-Deploy"
+
+      - name: Build SAM Application
+        run: |
+          sam build
+
+      - name: Deploy to AWS CloudFormation
+        run: |
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --stack-name serverless-research-agent \
+            --region ${{ vars.AWS_REGION || secrets.AWS_REGION || 'mx-central-1' }} \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
+

@@ -1,5 +1,6 @@
 # Serverless AI Research Agent on AWS
 
+[![CI/CD Pipeline](https://github.com/ruix-soft/serverless-research-agent-aws/actions/workflows/pipeline.yml/badge.svg)](https://github.com/ruix-soft/serverless-research-agent-aws/actions/workflows/pipeline.yml)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![AWS SAM](https://img.shields.io/badge/AWS%20SAM-Serverless-orange.svg)](https://aws.amazon.com/serverless/sam/)
 [![AWS Step Functions](https://img.shields.io/badge/AWS%20Step%20Functions-Orchestration-red.svg)](https://aws.amazon.com/step-functions/)
@@ -9,7 +10,7 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%7C%20DDD%20%7C%20CQRS-green.svg)](docs/architecture.md)
 [![Tests](https://img.shields.io/badge/Tests-114%20Passing-brightgreen.svg)](tests/)
 
-Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, orquestación distribuida resiliente con **AWS Step Functions**, y persistencia de estado con **Amazon DynamoDB** y **Amazon S3**.
+Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, orquestación distribuida resiliente con **AWS Step Functions**, persistencia de estado con **Amazon DynamoDB** y **Amazon S3**, y despliegues continuos automatizados (**CI/CD**) mediante **GitHub Actions** y **OpenID Connect (AWS OIDC)**.
 
 El proyecto sigue rigurosamente la metodología de arquitectura de software diseñada por **Luis Ruiz** (formalizada bajo la especificación **`arch-core`**), la cual compila y refina años de experiencia en ingeniería de software y cloud computing: arquitectura estricta en **dos capas principales (`app/` y `context/`)**, Arquitectura Hexagonal (Ports & Adapters), Domain-Driven Design (DDD) táctico, Segregación de Comandos y Consultas (CQRS), **Cadena de Responsabilidad (Chain of Responsibility)** para la orquestación atómica de casos de uso, Value Objects para tipado e hidratación de primitivos, inyección manual de dependencias, observabilidad desacoplada con **AWS Lambda Powertools**, y manejo funcional de errores mediante **Railway-Oriented Programming (`Result[O, E]`)**.
 
@@ -79,6 +80,10 @@ La base de código está estructurada en dos capas macro con aislamiento estrict
 
 ```
 serverless-research-agent-aws/
+├── .github/
+│   └── workflows/
+│       └── pipeline.yml                  # CI/CD Pipeline con GitHub Actions y AWS OIDC
+│
 ├── src/
 │   ├── app/                              # CAPA 1: PRESENTACIÓN Y ENTREGA
 │   │   ├── aws/
@@ -125,6 +130,9 @@ serverless-research-agent-aws/
 │               ├── tavily_search_tool.py            # Tool de búsqueda web con Tavily API
 │               └── powertools_adapters.py           # Adaptadores de observabilidad (Logger/Metrics)
 │
+├── infrastructure/
+│   └── github-oidc-role.yaml             # CloudFormation: Proveedor OIDC e IAM Role para CI/CD
+│
 ├── docs/                                 # DOCUMENTACIÓN TÉCNICA
 │   ├── architecture.md                   # Especificación detallada de arquitectura y flujos
 │   ├── openapi.yaml                      # Especificación OpenAPI 3.0 de los endpoints REST
@@ -133,9 +141,10 @@ serverless-research-agent-aws/
 │       ├── 0002-async-agent-execution.md
 │       ├── 0003-two-layer-clean-architecture-and-design-patterns.md
 │       ├── 0004-distributed-rate-limiting-with-dynamodb.md
-│       └── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
+│       ├── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
+│       └── 0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md
 │
-├── tests/                                # SUITE INTEGRAL DE PRUEBAS (113 Tests)
+├── tests/                                # SUITE INTEGRAL DE PRUEBAS (114 Tests)
 │   ├── test_controllers.py
 │   ├── test_handlers.py
 │   ├── test_decorators.py
@@ -146,6 +155,7 @@ serverless-research-agent-aws/
 │   ├── test_dynamodb_rate_limiter.py
 │   └── test_kit_*.py                     # Tests unitarios del módulo kit
 │
+├── .flake8                               # Configuración de Linter PEP 8
 ├── template.yaml                         # Infraestructura como Código (AWS SAM Template)
 └── README.md
 ```
@@ -159,11 +169,37 @@ serverless-research-agent-aws/
 3. **Cadena de Responsabilidad (Chain of Responsibility):** Todos los casos de uso se ejecutan como un pipeline secuencial de pasos atómicos (`Step[I, O, C]`) que operan sobre un contexto compartido (`Context`).
 4. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
 5. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
-6. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
+6. **Autenticación sin Claves Estáticas (OpenID Connect - OIDC):** Despliegues seguros de CI/CD asumiendo roles temporales en AWS STS.
+7. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
 
 ---
 
-## 🚀 Despliegue en AWS (SAM CLI)
+## 🔒 CI/CD & DevSecOps con AWS OIDC
+
+El despliegue a AWS está 100% automatizado mediante **GitHub Actions** usando **OpenID Connect (OIDC)**, eliminando la necesidad de almacenar `AWS_ACCESS_KEY_ID` o secretos estáticos en GitHub.
+
+### Aprovisionamiento Inicial del Rol OIDC en AWS
+
+Ejecuta el siguiente comando para desplegar la plantilla CloudFormation del rol OIDC:
+
+```bash
+aws cloudformation deploy \
+  --template-file infrastructure/github-oidc-role.yaml \
+  --stack-name serverless-research-agent-ci-role \
+  --parameter-overrides GitHubOrg=ruix-soft RepositoryName=serverless-research-agent-aws \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --region mx-central-1
+```
+
+### Configuración en GitHub Actions
+
+En tu repositorio de GitHub (**Settings $\rightarrow$ Secrets and variables $\rightarrow$ Actions**):
+1. **`AWS_ROLE_ARN`**: `arn:aws:iam::<ACCOUNT_ID>:role/GitHubActionsServerlessResearchAgentDeployRole`
+2. **`AWS_REGION`**: `mx-central-1`
+
+---
+
+## 🚀 Despliegue Manual en AWS (SAM CLI)
 
 ### Prerrequisitos
 1. [AWS CLI](https://aws.amazon.com/cli/) y [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) instalados y configurados con credenciales de AWS.
@@ -173,14 +209,14 @@ serverless-research-agent-aws/
      --name "/serverless-research-agent/tavily-api-key" \
      --type "SecureString" \
      --value "tvly-TU_API_KEY_AQUI" \
-     --region us-east-1
+     --region mx-central-1
    ```
 
 ### Pasos de Despliegue
 
 ```bash
 # 1. Validar la plantilla SAM
-sam validate
+sam validate --lint
 
 # 2. Construir los artefactos
 sam build
@@ -200,3 +236,4 @@ sam deploy --guided
 - 🏛️ [**ADR 0003:** Arquitectura en Dos Capas e Implementación de Patrones de Diseño](docs/adr/0003-two-layer-clean-architecture-and-design-patterns.md)
 - 🏛️ [**ADR 0004:** Control de Tasa Distribuido (Rate Limiting) con Amazon DynamoDB y Decoradores CQRS](docs/adr/0004-distributed-rate-limiting-with-dynamodb.md)
 - 🏛️ [**ADR 0005:** Solución Híbrida: Orquestación Resiliente con AWS Step Functions y Persistencia en DynamoDB](docs/adr/0005-hybrid-step-functions-and-dynamodb-orchestration.md)
+- 🏛️ [**ADR 0006:** CI/CD Enterprise con GitHub Actions y Autenticación OIDC (Zero Static Secrets)](docs/adr/0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md)

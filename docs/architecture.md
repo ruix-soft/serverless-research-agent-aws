@@ -1,6 +1,6 @@
 # Arquitectura del Agente Investigador Serverless (Metodología Luis Ruiz)
 
-Este proyecto implementa la metodología y filosofía arquitectónica diseñada y refinada por **Luis Ruiz** (estandarizada bajo la especificación **`arch-core`**), combinando una arquitectura **Serverless-First en AWS** con principios rigurosos de **Arquitectura Hexagonal (Ports & Adapters)**, **Domain-Driven Design (DDD)** táctico, **Segregación de Comandos y Consultas (CQRS)**, orquestación atómica mediante **Cadena de Responsabilidad (Chain of Responsibility)**, control de tasa distribuido (**Rate Limiting con DynamoDB**) y orquestación distribuida resiliente (**AWS Step Functions + DynamoDB JobsTable**).
+Este proyecto implementa la metodología y filosofía arquitectónica diseñada y refinada por **Luis Ruiz** (estandarizada bajo la especificación **`arch-core`**), combinando una arquitectura **Serverless-First en AWS** con principios rigurosos de **Arquitectura Hexagonal (Ports & Adapters)**, **Domain-Driven Design (DDD)** táctico, **Segregación de Comandos y Consultas (CQRS)**, orquestación atómica mediante **Cadena de Responsabilidad (Chain of Responsibility)**, control de tasa distribuido (**Rate Limiting con DynamoDB**), orquestación distribuida resiliente (**AWS Step Functions + DynamoDB JobsTable**) y automatización de despliegues **DevSecOps con OpenID Connect (OIDC)**.
 
 ---
 
@@ -279,3 +279,41 @@ sequenceDiagram
 | **`S3StorageAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto de persistencia usando Amazon S3 SDK (`boto3`). | `IReportStoragePort` |
 | **`BedrockAgentAdapter`** | Infraestructura (`context/research/`) | Adaptador concreto del agente ReAct (Strands SDK + Bedrock + Tavily). | `IResearchAgentPort` |
 | **`InfrastructureFactory`** | Infraestructura (`context/research/`) | Fábrica abstracta para ensamblaje manual de todos los adaptadores. | `IInfrastructureFactory` |
+
+---
+
+## 5. Arquitectura de CI/CD y DevSecOps con AWS OIDC
+
+El ciclo de entrega continua implementa el estándar de **Cero Secretos Estáticos (*Zero Static Secrets*)** mediante **GitHub Actions** y **OpenID Connect (OIDC)** federado con **AWS IAM**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Desarrollador (Luis Ruiz)
+    participant GitHub as GitHub Actions Runner
+    participant OIDC as GitHub OIDC Provider (token.actions.githubusercontent.com)
+    participant STS as AWS Security Token Service (STS)
+    participant IAM as AWS IAM Role (DeployRole)
+    participant SAM as AWS SAM CLI & CloudFormation
+
+    Dev->>GitHub: git push origin main
+    Note over GitHub: 1. Ejecuta Linting (flake8) y Pytest (114 Tests)
+    Note over GitHub: 2. Valida plantilla SAM (sam validate --lint)
+    
+    rect rgb(240, 248, 255)
+        Note over GitHub, STS: 3. Autenticación Criptográfica OIDC (Sin Access Keys)
+        GitHub->>OIDC: Solicita JWT Token firmado con claims del repositorio
+        OIDC-->>GitHub: Retorna JWT (iss: token.actions.githubusercontent.com, sub: repo:ruix-soft/...)
+        GitHub->>STS: AssumeRoleWithWebIdentity(RoleArn, JWT)
+        STS->>STS: Valida firma de OIDC y condiciones de confianza
+        STS->>IAM: Emite credenciales temporales de corta duración (1h)
+        STS-->>GitHub: Retorna AWS Access Key / Secret Key / Session Token temporales
+    end
+
+    rect rgb(240, 255, 240)
+        Note over GitHub, SAM: 4. Despliegue Automatizado
+        GitHub->>SAM: sam build
+        GitHub->>SAM: sam deploy --stack-name serverless-research-agent
+        SAM-->>GitHub: Despliegue completado con éxito
+    end
+```
