@@ -38,18 +38,19 @@ class ExecuteResearchWorkerController(BaseController[ExecuteResearchWorkerInputD
     def __init__(self, factory: Optional[IInfrastructureFactory] = None):
         factory = factory or InfrastructureFactory()
 
-        # 1. Instantiate Use Case
-        use_case = ExecuteResearchWorkerUseCase(
-            research_agent=factory.create_research_agent(),
-            report_storage=factory.create_report_storage()
-        )
-
-        # 2. Wrap in CommandHandler
-        command_handler = ExecuteResearchWorkerCommandHandler(use_case)
-
-        # 3. Retrieve observability tools
+        # 1. Retrieve observability tools
         logger = factory.create_logger()
         metrics = factory.create_metrics()
+
+        # 2. Instantiate Use Case with injected logger
+        use_case = ExecuteResearchWorkerUseCase(
+            research_agent=factory.create_research_agent(),
+            report_storage=factory.create_report_storage(),
+            logger=logger,
+        )
+
+        # 3. Wrap in CommandHandler
+        command_handler = ExecuteResearchWorkerCommandHandler(use_case)
 
         # 4. Stack decorators
         logging_decorated = LoggingDecorator(command_handler, logger=logger, handler_name="ExecuteResearchWorkerCommandHandler")

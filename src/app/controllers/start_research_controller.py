@@ -48,14 +48,21 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
     ):
         factory = factory or InfrastructureFactory()
 
-        # 1. Instantiate Use Case with State Machine Invoker
-        state_machine_invoker = factory.create_state_machine_invoker()
-        use_case = StartResearchUseCase(state_machine_invoker=state_machine_invoker)
+        # 1. Retrieve observability tools
+        logger = factory.create_logger()
+        metrics = factory.create_metrics()
 
-        # 2. Wrap in CommandHandler
+        # 2. Instantiate Use Case with State Machine Invoker and injected logger
+        state_machine_invoker = factory.create_state_machine_invoker()
+        use_case = StartResearchUseCase(
+            state_machine_invoker=state_machine_invoker,
+            logger=logger,
+        )
+
+        # 3. Wrap in CommandHandler
         command_handler = StartResearchCommandHandler(use_case)
 
-        # 3. Apply Rate Limiter Decorator
+        # 4. Apply Rate Limiter Decorator
         limiter = factory.create_rate_limiter()
         rate_limit_options = RateLimitOptions[StartResearchInputDTO](
             limit=rate_limit,
@@ -69,10 +76,6 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
             limiter=limiter,
             options=rate_limit_options,
         )
-
-        # 4. Retrieve observability tools
-        logger = factory.create_logger()
-        metrics = factory.create_metrics()
 
         # 5. Stack decorators
         logging_decorated = LoggingDecorator(rate_limited_handler, logger=logger, handler_name="StartResearchCommandHandler")

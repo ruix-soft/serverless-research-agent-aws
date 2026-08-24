@@ -48,16 +48,21 @@ class GetResearchStatusController(BaseController[GetResearchStatusInputDTO, GetR
     ):
         factory = factory or InfrastructureFactory()
 
-        # 1. Instantiate Use Case with Job Repository and Report Storage
+        # 1. Retrieve observability tools
+        logger = factory.create_logger()
+        metrics = factory.create_metrics()
+
+        # 2. Instantiate Use Case with Job Repository, Report Storage and injected logger
         use_case = GetResearchStatusUseCase(
             report_storage=factory.create_report_storage(),
             job_repository=factory.create_job_repository(),
+            logger=logger,
         )
 
-        # 2. Wrap in QueryHandler
+        # 3. Wrap in QueryHandler
         query_handler = GetResearchStatusQueryHandler(use_case)
 
-        # 3. Apply Rate Limiter Decorator
+        # 4. Apply Rate Limiter Decorator
         limiter = factory.create_rate_limiter()
         rate_limit_options = QueryRateLimitOptions[GetResearchStatusInputDTO](
             limit=rate_limit,
@@ -71,10 +76,6 @@ class GetResearchStatusController(BaseController[GetResearchStatusInputDTO, GetR
             limiter=limiter,
             options=rate_limit_options,
         )
-
-        # 4. Retrieve observability tools
-        logger = factory.create_logger()
-        metrics = factory.create_metrics()
 
         # 5. Stack decorators
         logging_decorated = LoggingDecorator(rate_limited_handler, logger=logger, handler_name="GetResearchStatusQueryHandler")

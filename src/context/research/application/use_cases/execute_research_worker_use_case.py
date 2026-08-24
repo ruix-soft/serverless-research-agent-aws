@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, Any, List
 from context.kit.chain import ChainBuilder, BaseChainStep
+from context.kit.chain.chain_step_logging_decorator import new_step_logging_decorator
+from context.kit.service.logger_service import LoggerService
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError, new_domain_error
 from context.kit.errors.validation_error import new_validation_error
@@ -124,17 +126,29 @@ class ExecuteResearchWorkerUseCase:
     Orchestrated strictly via Chain of Responsibility.
     """
 
-    def __init__(self, research_agent: IResearchAgentPort, report_storage: IReportStoragePort):
+    def __init__(
+        self,
+        research_agent: IResearchAgentPort,
+        report_storage: IReportStoragePort,
+        logger: Optional[LoggerService] = None,
+    ):
         self._research_agent = research_agent
         self._report_storage = report_storage
-        self._pipeline = (
-            ChainBuilder[ExecuteResearchWorkerInputDTO, ExecuteResearchWorkerOutputDTO, ExecuteResearchWorkerContext]()
-            .add_handler(ValidateWorkerPayloadStep())
-            .add_handler(RunAgentReasoningStep(research_agent=self._research_agent))
-            .add_handler(PersistReportStorageStep(report_storage=self._report_storage))
-            .add_handler(BuildWorkerOutputStep())
-            .build()
-        )
+        self._logger = logger
+
+        builder = ChainBuilder[ExecuteResearchWorkerInputDTO, ExecuteResearchWorkerOutputDTO, ExecuteResearchWorkerContext]()
+        steps: List[BaseChainStep[ExecuteResearchWorkerInputDTO, ExecuteResearchWorkerOutputDTO, ExecuteResearchWorkerContext]] = [
+            ValidateWorkerPayloadStep(),
+            RunAgentReasoningStep(research_agent=self._research_agent),
+            PersistReportStorageStep(report_storage=self._report_storage),
+            BuildWorkerOutputStep(),
+        ]
+
+        for step in steps:
+            handler = new_step_logging_decorator(step, self._logger) if self._logger else step
+            builder.add_handler(handler)
+
+        self._pipeline = builder.build()
 
     def execute(self, input_dto: ExecuteResearchWorkerInputDTO, ctx: Optional[Any] = None) -> Result[ExecuteResearchWorkerOutputDTO, DomainError]:
         shared_context = ExecuteResearchWorkerContext()

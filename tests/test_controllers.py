@@ -77,10 +77,27 @@ class MockResearchAgent(IResearchAgentPort):
         return f"# Report on {topic}\n\nGenerated findings..."
 
 
-class MockLogger(ILoggerPort):
-    def info(self, message: str, **kwargs: Any) -> None: pass
-    def error(self, message: str, **kwargs: Any) -> None: pass
-    def warning(self, message: str, **kwargs: Any) -> None: pass
+from context.kit.service.logger_service import LoggerService
+
+
+class MockLogger(ILoggerPort, LoggerService):
+    def __init__(self):
+        self.logs = []
+
+    def info(self, message: str, details: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        self.logs.append({"level": "INFO", "message": message, "details": details, **kwargs})
+
+    def warn(self, message: str, details: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        self.logs.append({"level": "WARN", "message": message, "details": details, **kwargs})
+
+    def warning(self, message: str, **kwargs: Any) -> None:
+        self.logs.append({"level": "WARN", "message": message, **kwargs})
+
+    def debug(self, message: str, details: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        self.logs.append({"level": "DEBUG", "message": message, "details": details, **kwargs})
+
+    def error(self, message: str, err: Optional[Any] = None, details: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        self.logs.append({"level": "ERROR", "message": message, "err": err, "details": details, **kwargs})
 
 
 class MockMetrics(IMetricsPort):
@@ -242,3 +259,22 @@ def test_execute_research_worker_controller_success():
     assert result.value.status == "SUCCESS"
     assert result.value.s3_key == "reports/66666666-6666-6666-6666-666666666666.md"
     assert "66666666-6666-6666-6666-666666666666" in factory.storage.reports
+
+
+def test_chain_step_logging_injected_from_controller():
+    factory = MockInfrastructureFactory()
+    controller = StartResearchController(factory=factory)
+
+    dto = StartResearchInputDTO(topic="AI Chain Logging Test")
+    result = controller.run(dto, ctx=Metadata(user="test_user", ip="127.0.0.1"))
+
+    assert result.is_ok() is True
+    # Verify that the logger captured logs from the chain steps (ValidateStartResearchStep, InvokeStateMachineStep, BuildStartResearchOutputStep)
+    step_handler_names = [
+        log["details"]["handlerName"]
+        for log in factory.logger.logs
+        if log.get("details") and "handlerName" in log["details"]
+    ]
+    assert "ValidateStartResearchStep" in step_handler_names
+    assert "InvokeStateMachineStep" in step_handler_names
+    assert "BuildStartResearchOutputStep" in step_handler_names

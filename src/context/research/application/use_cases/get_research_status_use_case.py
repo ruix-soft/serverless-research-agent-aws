@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, Any, List
 from context.kit.chain import ChainBuilder, BaseChainStep
+from context.kit.chain.chain_step_logging_decorator import new_step_logging_decorator
+from context.kit.service.logger_service import LoggerService
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError, new_domain_error
 from context.kit.errors.validation_error import new_validation_error
@@ -172,17 +174,25 @@ class GetResearchStatusUseCase:
         self,
         report_storage: IReportStoragePort,
         job_repository: Optional[IResearchJobRepository] = None,
+        logger: Optional[LoggerService] = None,
     ):
         self._report_storage = report_storage
         self._job_repository = job_repository
-        self._pipeline = (
-            ChainBuilder[GetResearchStatusInputDTO, GetResearchStatusOutputDTO, GetResearchStatusContext]()
-            .add_handler(ValidateGetStatusStep())
-            .add_handler(FindResearchJobStep(job_repository=self._job_repository, report_storage=self._report_storage))
-            .add_handler(ResolvePresignedUrlStep(report_storage=self._report_storage))
-            .add_handler(BuildGetStatusOutputStep())
-            .build()
-        )
+        self._logger = logger
+
+        builder = ChainBuilder[GetResearchStatusInputDTO, GetResearchStatusOutputDTO, GetResearchStatusContext]()
+        steps: List[BaseChainStep[GetResearchStatusInputDTO, GetResearchStatusOutputDTO, GetResearchStatusContext]] = [
+            ValidateGetStatusStep(),
+            FindResearchJobStep(job_repository=self._job_repository, report_storage=self._report_storage),
+            ResolvePresignedUrlStep(report_storage=self._report_storage),
+            BuildGetStatusOutputStep(),
+        ]
+
+        for step in steps:
+            handler = new_step_logging_decorator(step, self._logger) if self._logger else step
+            builder.add_handler(handler)
+
+        self._pipeline = builder.build()
 
     def execute(self, input_dto: GetResearchStatusInputDTO, ctx: Optional[Any] = None) -> Result[GetResearchStatusOutputDTO, DomainError]:
         shared_context = GetResearchStatusContext()
