@@ -3,11 +3,11 @@ info:
   title: Serverless AI Research Agent API
   description: >
     API REST para solicitar y consultar investigaciones técnicas profundas automatizadas.
-    Construida sobre AWS Serverless (API Gateway, AWS Lambda, Amazon S3), Amazon Bedrock
+    Construida sobre AWS Serverless (API Gateway, AWS Step Functions, Amazon DynamoDB, AWS Lambda, Amazon S3), Amazon Bedrock
     (patrón ReAct con Claude Sonnet 4.5 / Strands SDK) y Tavily Web Search API.
-    Sigue una arquitectura en dos capas (Presentación y Contexto) con CQRS, Hexagonal y
-    patrón asíncrono basado en eventos (Event-Driven Polling).
-  version: 2.0.0
+    Sigue una arquitectura en dos capas (Presentación y Contexto) con CQRS, Hexagonal,
+    control de tasa distribuido (Rate Limiting) y orquestación resiliente (Saga/State Machine).
+  version: 2.1.0
 servers:
   - url: https://{apiId}.execute-api.{region}.amazonaws.com/Prod
     description: Amazon API Gateway REST API Deployment
@@ -23,9 +23,9 @@ paths:
     post:
       summary: Iniciar una investigación técnica asíncrona
       description: >
-        Valida los parámetros de entrada, genera un `job_id` único e invoca la función Lambda
-        worker en segundo plano de forma asíncrona. Retorna inmediatamente HTTP 202 con la URL
-        para consultar el progreso del reporte.
+        Valida los parámetros de entrada, evalúa el límite de tasa por IP (Rate Limiting en DynamoDB),
+        genera un `job_id` único e inicia la máquina de estados de AWS Step Functions. Retorna inmediatamente
+        HTTP 202 con la URL para consultar el progreso del reporte.
       operationId: startResearch
       requestBody:
         required: true
@@ -46,6 +46,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DomainErrorResponse'
+        '429':
+          description: Límite de peticiones por minuto superado (Rate Limit Exceeded).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainErrorResponse'
         '500':
           description: Error interno del servidor o fallo de invocación de infraestructura.
           content:
@@ -57,9 +63,10 @@ paths:
     get:
       summary: Consultar el estado de una investigación y obtener el reporte
       description: >
-        Verifica si el reporte Markdown generado por el agente de IA ya está disponible en Amazon S3.
-        Si la investigación terminó, retorna HTTP 200 con una URL presignada temporal (1 hora de validez).
-        Si continúa ejecutándose, retorna el estado IN_PROGRESS.
+        Consulta el estado del trabajo en Amazon DynamoDB (`JobsTable`).
+        Si la investigación terminó (`COMPLETED`), retorna HTTP 200 con una URL presignada temporal de Amazon S3 (1 hora de validez).
+        Si falló (`FAILED`), retorna HTTP 200 con el motivo del error.
+        Si continúa ejecutándose (`IN_PROGRESS`), retorna el estado informativo para continuar el polling.
       operationId: getResearchStatus
       parameters:
         - name: job_id
@@ -84,13 +91,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/DomainErrorResponse'
         '404':
-          description: Trabajo de investigación o recurso no encontrado.
+          description: Trabajo de investigación no encontrado en DynamoDB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainErrorResponse'
+        '429':
+          description: Límite de consultas por minuto superado (Rate Limit Exceeded).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DomainErrorResponse'
         '500':
-          description: Error interno en la consulta del almacenamiento S3.
+          description: Error interno en la consulta del repositorio de trabajos o almacenamiento S3.
           content:
             application/json:
               schema:
@@ -163,6 +176,11 @@ components:
           format: uuid
           description: Identificador del trabajo consultado.
           example: "8f0a2c3a-23ef-4b2a-8742-fa32c748c901"
+        topic:
+          type: string
+          nullable: true
+          description: Tema de investigación asociado al trabajo.
+          example: "Arquitecturas Serverless y Modelos ReAct en AWS 2026"
         status:
           type: string
           enum: [IN_PROGRESS, COMPLETED, FAILED]
@@ -172,6 +190,11 @@ components:
           type: string
           description: Detalle del estado del trabajo.
           example: "Investigación completada exitosamente."
+        error:
+          type: string
+          nullable: true
+          description: Detalle del error en caso de que el estado sea FAILED.
+          example: "Bedrock quota exceeded tras reintentos."
         s3_report_url:
           type: string
           format: uri

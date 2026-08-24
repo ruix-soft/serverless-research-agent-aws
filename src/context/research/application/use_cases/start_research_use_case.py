@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, Any, Union
 from context.kit.chain import ChainBuilder, BaseChainStep
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError, new_domain_error
@@ -9,7 +9,7 @@ from context.research.application.dtos.start_research_dto import (
     StartResearchInputDTO,
     StartResearchOutputDTO
 )
-from context.research.domain.ports import IAsyncWorkerInvokerPort
+from context.research.domain.ports import IStateMachineInvokerPort, IAsyncWorkerInvokerPort
 
 
 @dataclass
@@ -40,14 +40,14 @@ class ValidateStartResearchStep(BaseChainStep[StartResearchInputDTO, StartResear
         return Result.ok(None)
 
 
-class InvokeWorkerStep(BaseChainStep[StartResearchInputDTO, StartResearchOutputDTO, StartResearchContext]):
-    """Invokes the background async worker with the initialized job ID."""
+class InvokeStateMachineStep(BaseChainStep[StartResearchInputDTO, StartResearchOutputDTO, StartResearchContext]):
+    """Invokes the AWS Step Functions state machine with the initialized job ID."""
 
-    def __init__(self, worker_invoker: IAsyncWorkerInvokerPort):
-        self._worker_invoker = worker_invoker
+    def __init__(self, invoker: Union[IStateMachineInvokerPort, IAsyncWorkerInvokerPort]):
+        self._invoker = invoker
 
     def name(self) -> str:
-        return "InvokeWorkerStep"
+        return "InvokeStateMachineStep"
 
     def execute(
         self,
@@ -57,13 +57,20 @@ class InvokeWorkerStep(BaseChainStep[StartResearchInputDTO, StartResearchOutputD
     ) -> Result[Optional[StartResearchOutputDTO], DomainError]:
         try:
             assert shared_context.job_id is not None
-            self._worker_invoker.invoke_worker(
-                job_id=shared_context.job_id,
-                topic=input_dto.topic.strip()
-            )
+            topic = input_dto.topic.strip()
+            if hasattr(self._invoker, "start_execution"):
+                self._invoker.start_execution(
+                    job_id=shared_context.job_id,
+                    topic=topic
+                )
+            elif hasattr(self._invoker, "invoke_worker"):
+                self._invoker.invoke_worker(
+                    job_id=shared_context.job_id,
+                    topic=topic
+                )
             return Result.ok(None)
         except Exception as e:
-            return Result.err(new_domain_error("infrastructure_error", f"Error invocando worker asíncrono: {str(e)}"))
+            return Result.err(new_domain_error("infrastructure_error", f"Error iniciando orquestación: {str(e)}"))
 
 
 class BuildStartResearchOutputStep(BaseChainStep[StartResearchInputDTO, StartResearchOutputDTO, StartResearchContext]):
@@ -93,12 +100,12 @@ class StartResearchUseCase:
     Orchestrated strictly via Chain of Responsibility.
     """
 
-    def __init__(self, worker_invoker: IAsyncWorkerInvokerPort):
-        self._worker_invoker = worker_invoker
+    def __init__(self, state_machine_invoker: Union[IStateMachineInvokerPort, IAsyncWorkerInvokerPort]):
+        self._state_machine_invoker = state_machine_invoker
         self._pipeline = (
             ChainBuilder[StartResearchInputDTO, StartResearchOutputDTO, StartResearchContext]()
             .add_handler(ValidateStartResearchStep())
-            .add_handler(InvokeWorkerStep(worker_invoker=self._worker_invoker))
+            .add_handler(InvokeStateMachineStep(invoker=self._state_machine_invoker))
             .add_handler(BuildStartResearchOutputStep())
             .build()
         )

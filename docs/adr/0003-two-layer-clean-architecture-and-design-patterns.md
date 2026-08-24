@@ -13,7 +13,7 @@ El Agente de Investigación Serverless requería evolucionar desde una estructur
 
 ## Decisión
 
-Adoptar una arquitectura estricta en **Dos Capas Principales (Presentación y Contexto)** (`arch-core`) implementando patrones de diseño reconocidos:
+Adoptar la metodología de arquitectura en **Dos Capas Principales (Presentación y Contexto)** diseñada y refinada por **Luis Ruiz** (estandarizada bajo la especificación `arch-core`), implementando patrones de diseño reconocidos:
 
 ### 1. Macro-Separación de Capas
 

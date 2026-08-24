@@ -31,8 +31,8 @@ class GetResearchStatusQueryHandler(IQueryHandler[GetResearchStatusInputDTO, Get
 class GetResearchStatusController(BaseController[GetResearchStatusInputDTO, GetResearchStatusOutputDTO]):
     """
     Controller for checking research status and retrieving presigned URLs.
-    Follows arch-core strict sequential construction:
-    1. Instantiate Use Case using InfrastructureFactory.
+    Follows Luis Ruiz architectural methodology (arch-core) strict sequential construction:
+    1. Instantiate Use Case using InfrastructureFactory (Job Repository + S3 Storage).
     2. Wrap Use Case in QueryHandler.
     3. Apply Rate Limiter Decorator (DynamoDB backed).
     4. Retrieve generic observability tools.
@@ -48,8 +48,11 @@ class GetResearchStatusController(BaseController[GetResearchStatusInputDTO, GetR
     ):
         factory = factory or InfrastructureFactory()
 
-        # 1. Instantiate Use Case
-        use_case = GetResearchStatusUseCase(report_storage=factory.create_report_storage())
+        # 1. Instantiate Use Case with Job Repository and Report Storage
+        use_case = GetResearchStatusUseCase(
+            report_storage=factory.create_report_storage(),
+            job_repository=factory.create_job_repository(),
+        )
 
         # 2. Wrap in QueryHandler
         query_handler = GetResearchStatusQueryHandler(use_case)

@@ -3,12 +3,16 @@ from context.kit.service.rate_limiter_service import RateLimiterService
 from context.research.domain.ports import (
     IInfrastructureFactory,
     IReportStoragePort,
+    IResearchJobRepository,
+    IStateMachineInvokerPort,
     IAsyncWorkerInvokerPort,
     IResearchAgentPort,
     ILoggerPort,
     IMetricsPort
 )
 from context.research.infrastructure.s3_storage_adapter import S3StorageAdapter
+from context.research.infrastructure.dynamodb_job_repository_adapter import DynamoDBJobRepositoryAdapter
+from context.research.infrastructure.step_functions_invoker_adapter import StepFunctionsInvokerAdapter
 from context.research.infrastructure.lambda_invoker_adapter import LambdaInvokerAdapter
 from context.research.infrastructure.bedrock_agent_adapter import BedrockAgentAdapter
 from context.research.infrastructure.powertools_adapters import (
@@ -19,6 +23,8 @@ from context.research.infrastructure.dynamodb_rate_limiter_adapter import Dynamo
 
 # Global / module scope resource instances
 _default_s3_storage = None
+_default_job_repository = None
+_default_state_machine_invoker = None
 _default_lambda_invoker = None
 _default_research_agent = None
 _default_logger = None
@@ -32,16 +38,22 @@ class InfrastructureFactory(IInfrastructureFactory):
     def __init__(
         self,
         report_storage: Optional[IReportStoragePort] = None,
+        job_repository: Optional[IResearchJobRepository] = None,
+        state_machine_invoker: Optional[IStateMachineInvokerPort] = None,
         async_worker_invoker: Optional[IAsyncWorkerInvokerPort] = None,
         research_agent: Optional[IResearchAgentPort] = None,
         logger: Optional[ILoggerPort] = None,
         metrics: Optional[IMetricsPort] = None,
         rate_limiter: Optional[RateLimiterService] = None,
     ):
-        global _default_s3_storage, _default_lambda_invoker, _default_research_agent, _default_logger, _default_metrics, _default_rate_limiter
+        global _default_s3_storage, _default_job_repository, _default_state_machine_invoker, _default_lambda_invoker, _default_research_agent, _default_logger, _default_metrics, _default_rate_limiter
 
         if _default_s3_storage is None:
             _default_s3_storage = S3StorageAdapter()
+        if _default_job_repository is None:
+            _default_job_repository = DynamoDBJobRepositoryAdapter()
+        if _default_state_machine_invoker is None:
+            _default_state_machine_invoker = StepFunctionsInvokerAdapter()
         if _default_lambda_invoker is None:
             _default_lambda_invoker = LambdaInvokerAdapter()
         if _default_research_agent is None:
@@ -54,6 +66,8 @@ class InfrastructureFactory(IInfrastructureFactory):
             _default_rate_limiter = DynamoDBRateLimiterAdapter()
 
         self._report_storage = report_storage or _default_s3_storage
+        self._job_repository = job_repository or _default_job_repository
+        self._state_machine_invoker = state_machine_invoker or _default_state_machine_invoker
         self._async_worker_invoker = async_worker_invoker or _default_lambda_invoker
         self._research_agent = research_agent or _default_research_agent
         self._logger = logger or _default_logger
@@ -62,6 +76,12 @@ class InfrastructureFactory(IInfrastructureFactory):
 
     def create_report_storage(self) -> IReportStoragePort:
         return self._report_storage
+
+    def create_job_repository(self) -> IResearchJobRepository:
+        return self._job_repository
+
+    def create_state_machine_invoker(self) -> IStateMachineInvokerPort:
+        return self._state_machine_invoker
 
     def create_async_worker_invoker(self) -> IAsyncWorkerInvokerPort:
         return self._async_worker_invoker

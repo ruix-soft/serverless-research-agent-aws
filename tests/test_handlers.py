@@ -10,6 +10,7 @@ from app.aws.handlers.get_research_status_handler import lambda_handler as statu
 from app.aws.handlers.execute_research_worker_handler import lambda_handler as worker_handler
 from context.kit.dtos.result import Result
 from context.kit.errors.rate_limit_error import new_rate_limit_error
+from context.kit.errors.not_found_error import new_not_found_error
 from context.research.application.dtos.start_research_dto import StartResearchOutputDTO
 from context.research.application.dtos.get_research_status_dto import GetResearchStatusOutputDTO
 from context.research.application.dtos.execute_research_worker_dto import ExecuteResearchWorkerOutputDTO
@@ -29,7 +30,7 @@ def test_start_research_handler_missing_topic():
 
     assert response["statusCode"] == 400
     body = json.loads(response["body"])
-    assert body["code"] == "VALIDATION_ERROR" or body.get("type") == "validation"
+    assert body.get("code") == "VALIDATION_ERROR" or body.get("type") == "validation"
 
 
 def test_start_research_handler_malformed_json():
@@ -39,7 +40,7 @@ def test_start_research_handler_malformed_json():
 
     assert response["statusCode"] == 400
     body = json.loads(response["body"])
-    assert body["code"] == "BAD_REQUEST" or body.get("type") == "bad_request"
+    assert body.get("code") == "BAD_REQUEST" or body.get("type") == "bad_request"
 
 
 @patch("app.aws.handlers.start_research_handler._controller.run")
@@ -99,7 +100,7 @@ def test_get_research_status_handler_missing_param():
 
 
 @patch("app.aws.handlers.get_research_status_handler._controller.run")
-def test_get_research_status_handler_success(mock_run):
+def test_get_research_status_handler_success_completed(mock_run):
     mock_run.return_value = Result.ok(
         GetResearchStatusOutputDTO(
             job_id="job-123",
@@ -122,6 +123,54 @@ def test_get_research_status_handler_success(mock_run):
     body = json.loads(response["body"])
     assert body["status"] == "COMPLETED"
     assert "https://s3.amazonaws.com" in body["s3_report_url"]
+
+
+@patch("app.aws.handlers.get_research_status_handler._controller.run")
+def test_get_research_status_handler_success_failed(mock_run):
+    mock_run.return_value = Result.ok(
+        GetResearchStatusOutputDTO(
+            job_id="job-999",
+            status="FAILED",
+            error="Bedrock timeout",
+            message="Ocurrió un error al procesar la investigación."
+        )
+    )
+
+    event = {
+        "pathParameters": {"job_id": "job-999"},
+        "requestContext": {
+            "identity": {"sourceIp": "10.0.0.1"},
+            "requestId": "req-456"
+        }
+    }
+    context = DummyLambdaContext()
+    response = status_handler(event, context)
+
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["status"] == "FAILED"
+    assert body["error"] == "Bedrock timeout"
+
+
+@patch("app.aws.handlers.get_research_status_handler._controller.run")
+def test_get_research_status_handler_not_found(mock_run):
+    mock_run.return_value = Result.err(
+        new_not_found_error("Investigación no encontrada.")
+    )
+
+    event = {
+        "pathParameters": {"job_id": "non-existent"},
+        "requestContext": {
+            "identity": {"sourceIp": "10.0.0.1"},
+            "requestId": "req-456"
+        }
+    }
+    context = DummyLambdaContext()
+    response = status_handler(event, context)
+
+    assert response["statusCode"] == 404
+    body = json.loads(response["body"])
+    assert body.get("type") == "not_found" or body.get("code") == "NOT_FOUND" or body.get("message") is not None
 
 
 @patch("app.aws.handlers.get_research_status_handler._controller.run")

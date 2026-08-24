@@ -1,5 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
+from context.kit.dtos.optional import Optional as KitOptional
+from context.kit.service.rate_limiter_service import RateLimiterService
+from context.research.domain.entities.research_job import ResearchJob
+
 
 class ILoggerPort(ABC):
     """Port for structured logging."""
@@ -24,7 +28,7 @@ class IMetricsPort(ABC):
 
 
 class IReportStoragePort(ABC):
-    """Port for persisting and retrieving research reports."""
+    """Port for persisting and retrieving research reports in S3."""
     @abstractmethod
     def upload_report(self, job_id: str, content: str, extension: str = "md") -> str:
         """Uploads report content and returns the stored object key/path."""
@@ -41,29 +45,53 @@ class IReportStoragePort(ABC):
         pass
 
 
+class IResearchJobRepository(ABC):
+    """Port for persisting and querying ResearchJob aggregate roots in DynamoDB."""
+    @abstractmethod
+    def save(self, job: ResearchJob) -> None:
+        """Saves or updates a ResearchJob entity."""
+        pass
+
+    @abstractmethod
+    def find_by_id(self, job_id: str) -> KitOptional[ResearchJob]:
+        """Finds a ResearchJob by its unique identifier."""
+        pass
+
+
+class IStateMachineInvokerPort(ABC):
+    """Port for starting the AWS Step Functions research state machine."""
+    @abstractmethod
+    def start_execution(self, job_id: str, topic: str) -> None:
+        """Triggers Step Functions state machine execution asynchronously."""
+        pass
+
+
 class IAsyncWorkerInvokerPort(ABC):
-    """Port for invoking the background research worker."""
+    """Port for invoking the background research worker directly (fallback / testing)."""
     @abstractmethod
     def invoke_worker(self, job_id: str, topic: str) -> None:
-        """Triggers the async worker execution without waiting for completion."""
         pass
 
 
 class IResearchAgentPort(ABC):
-    """Port for AI Research execution."""
+    """Port for AI Research execution (Bedrock + Tavily)."""
     @abstractmethod
     def execute_research(self, topic: str) -> str:
-        """Executes the research agent workflow and returns markdown content."""
         pass
-
-
-from context.kit.service.rate_limiter_service import RateLimiterService
 
 
 class IInfrastructureFactory(ABC):
     """Abstract Factory to provide infrastructure adapters and cross-cutting ports."""
     @abstractmethod
     def create_report_storage(self) -> IReportStoragePort:
+        pass
+
+    @abstractmethod
+    def create_job_repository(self) -> IResearchJobRepository:
+        pass
+
+    @abstractmethod
+    def create_state_machine_invoker(self) -> IStateMachineInvokerPort:
         pass
 
     @abstractmethod
@@ -85,5 +113,3 @@ class IInfrastructureFactory(ABC):
     @abstractmethod
     def create_rate_limiter(self) -> RateLimiterService:
         pass
-
-

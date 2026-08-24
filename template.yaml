@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Serverless Research Agent powered by Strands Agents SDK, Amazon Bedrock, AWS Lambda Powertools and S3.
+Description: Serverless Research Agent powered by Strands Agents SDK, Amazon Bedrock, AWS Step Functions, DynamoDB, AWS Lambda Powertools and S3.
 
 Globals:
   Function:
@@ -11,6 +11,7 @@ Globals:
       Variables:
         REPORTS_BUCKET_NAME: !Ref ReportsBucket
         RATE_LIMITS_TABLE_NAME: !Ref RateLimitsTable
+        JOBS_TABLE_NAME: !Ref JobsTable
         POWERTOOLS_SERVICE_NAME: serverless-research-agent
         POWERTOOLS_METRICS_NAMESPACE: ResearchAgent
         LOG_LEVEL: INFO
@@ -49,7 +50,132 @@ Resources:
         AttributeName: expires_at
         Enabled: true
 
-  # 3. Función Lambda para Iniciar Investigación (POST /research)
+  # 3. Tabla DynamoDB para Gestión de Estado del Ciclo de Vida de Trabajos
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "serverless-research-agent-jobs-${AWS::AccountId}-${AWS::Region}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  # 4. Máquina de Estados AWS Step Functions para Orquestación Resiliente
+  ResearchStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "serverless-research-agent-state-machine-${AWS::AccountId}-${AWS::Region}"
+      Type: STANDARD
+      Definition:
+        Comment: "Orquestación resiliente para Agente de Investigación con persistencia en DynamoDB"
+        StartAt: PutJobInProgress
+        States:
+          PutJobInProgress:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:putItem"
+            Parameters:
+              TableName: !Ref JobsTable
+              Item:
+                pk:
+                  S.$: "States.Format('JOB#{}', $.job_id)"
+                id:
+                  S.$: "$.job_id"
+                topic:
+                  S.$: "$.topic"
+                status:
+                  S: "IN_PROGRESS"
+                created_at:
+                  S.$: "$$.Execution.StartTime"
+                updated_at:
+                  S.$: "$$.Execution.StartTime"
+            ResultPath: null
+            Next: ExecuteResearchWorkerTask
+
+          ExecuteResearchWorkerTask:
+            Type: Task
+            Resource: "arn:aws:states:::lambda:invoke"
+            Parameters:
+              FunctionName: !GetAtt ExecuteResearchWorkerFunction.Arn
+              Payload:
+                job_id.$: "$.job_id"
+                topic.$: "$.topic"
+            ResultSelector:
+              job_id.$: "$.Payload.job_id"
+              status.$: "$.Payload.status"
+              s3_key.$: "$.Payload.s3_key"
+            ResultPath: "$.worker_result"
+            Retry:
+              - ErrorEquals:
+                  - "Lambda.ServiceException"
+                  - "Lambda.AWSLambdaException"
+                  - "Lambda.SdkClientException"
+                  - "Lambda.TooManyRequestsException"
+                IntervalSeconds: 3
+                MaxAttempts: 3
+                BackoffRate: 2.0
+            Catch:
+              - ErrorEquals:
+                  - "States.ALL"
+                ResultPath: "$.error_info"
+                Next: MarkJobAsFailed
+            Next: MarkJobAsCompleted
+
+          MarkJobAsCompleted:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:updateItem"
+            Parameters:
+              TableName: !Ref JobsTable
+              Key:
+                pk:
+                  S.$: "States.Format('JOB#{}', $.job_id)"
+              UpdateExpression: "SET #st = :completed, #s3 = :s3_key, #up = :updated_at"
+              ExpressionAttributeNames:
+                "#st": "status"
+                "#s3": "s3_key"
+                "#up": "updated_at"
+              ExpressionAttributeValues:
+                ":completed":
+                  S: "COMPLETED"
+                ":s3_key":
+                  S.$: "$.worker_result.s3_key"
+                ":updated_at":
+                  S.$: "$$.Execution.StartTime"
+            End: true
+
+          MarkJobAsFailed:
+            Type: Task
+            Resource: "arn:aws:states:::dynamodb:updateItem"
+            Parameters:
+              TableName: !Ref JobsTable
+              Key:
+                pk:
+                  S.$: "States.Format('JOB#{}', $.job_id)"
+              UpdateExpression: "SET #st = :failed, #err = :error_msg, #up = :updated_at"
+              ExpressionAttributeNames:
+                "#st": "status"
+                "#err": "error_message"
+                "#up": "updated_at"
+              ExpressionAttributeValues:
+                ":failed":
+                  S: "FAILED"
+                ":error_msg":
+                  S: "Error durante la ejecución del agente de investigación."
+                ":updated_at":
+                  S.$: "$$.Execution.StartTime"
+            End: true
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExecuteResearchWorkerFunction
+
+  # 5. Función Lambda para Iniciar Investigación (POST /research)
   StartResearchFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -59,14 +185,15 @@ Resources:
       MemorySize: 256
       Environment:
         Variables:
+          STATE_MACHINE_ARN: !Ref ResearchStateMachine
           WORKER_FUNCTION_NAME: !Ref ExecuteResearchWorkerFunction
       Policies:
-        # Invocación asíncrona del worker
+        # Invocación de Step Functions
         - Statement:
             - Effect: Allow
               Action:
-                - lambda:InvokeFunction
-              Resource: !GetAtt ExecuteResearchWorkerFunction.Arn
+                - states:StartExecution
+              Resource: !Ref ResearchStateMachine
         # Rate Limiting atómico en DynamoDB
         - Statement:
             - Effect: Allow
@@ -81,7 +208,7 @@ Resources:
             Path: /research
             Method: post
 
-  # 4. Función Lambda para Consultar Estado de Investigación (GET /research/{job_id})
+  # 6. Función Lambda para Consultar Estado de Investigación (GET /research/{job_id})
   GetResearchStatusFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -93,6 +220,13 @@ Resources:
         # Lectura de reportes en S3
         - S3ReadPolicy:
             BucketName: !Ref ReportsBucket
+        # Lectura de estado de trabajos en DynamoDB
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: !GetAtt JobsTable.Arn
         # Rate Limiting atómico en DynamoDB
         - Statement:
             - Effect: Allow
@@ -107,7 +241,7 @@ Resources:
             Path: /research/{job_id}
             Method: get
 
-  # 5. Función Lambda Worker para Ejecutar Agente de IA en Segundo Plano
+  # 7. Función Lambda Worker para Ejecutar Agente de IA en Segundo Plano
   ExecuteResearchWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -146,3 +280,9 @@ Outputs:
   RateLimitsTableName:
     Description: "Nombre de la tabla DynamoDB para control de tasa (Rate Limiting)"
     Value: !Ref RateLimitsTable
+  JobsTableName:
+    Description: "Nombre de la tabla DynamoDB para ciclo de vida de trabajos"
+    Value: !Ref JobsTable
+  StateMachineArn:
+    Description: "ARN de la máquina de estados de Step Functions"
+    Value: !Ref ResearchStateMachine

@@ -31,8 +31,8 @@ class StartResearchCommandHandler(ICommandHandler[StartResearchInputDTO, StartRe
 class StartResearchController(BaseController[StartResearchInputDTO, StartResearchOutputDTO]):
     """
     Controller for initiating research tasks.
-    Follows arch-core strict sequential construction:
-    1. Instantiate Use Case using InfrastructureFactory.
+    Follows Luis Ruiz architectural methodology (arch-core) strict sequential construction:
+    1. Instantiate Use Case using InfrastructureFactory (Step Functions State Machine).
     2. Wrap Use Case in CommandHandler.
     3. Apply Rate Limiter Decorator (DynamoDB backed).
     4. Retrieve generic observability tools.
@@ -43,13 +43,14 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
     def __init__(
         self,
         factory: Optional[IInfrastructureFactory] = None,
-        rate_limit: int = 1, # 1 request per minute
-        rate_window_ms: int = 60000, # 1 minute window
+        rate_limit: int = 5,
+        rate_window_ms: int = 60000,
     ):
         factory = factory or InfrastructureFactory()
 
-        # 1. Instantiate Use Case
-        use_case = StartResearchUseCase(worker_invoker=factory.create_async_worker_invoker())
+        # 1. Instantiate Use Case with State Machine Invoker
+        state_machine_invoker = factory.create_state_machine_invoker()
+        use_case = StartResearchUseCase(state_machine_invoker=state_machine_invoker)
 
         # 2. Wrap in CommandHandler
         command_handler = StartResearchCommandHandler(use_case)

@@ -2,20 +2,22 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![AWS SAM](https://img.shields.io/badge/AWS%20SAM-Serverless-orange.svg)](https://aws.amazon.com/serverless/sam/)
+[![AWS Step Functions](https://img.shields.io/badge/AWS%20Step%20Functions-Orchestration-red.svg)](https://aws.amazon.com/step-functions/)
+[![Amazon DynamoDB](https://img.shields.io/badge/Amazon%20DynamoDB-JobsTable%20%7C%20RateLimits-blueviolet.svg)](https://aws.amazon.com/dynamodb/)
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet-darkblue.svg)](https://aws.amazon.com/bedrock/)
 [![OpenAPI 3.0](https://img.shields.io/badge/OpenAPI-3.0.3-brightgreen.svg)](docs/openapi.yaml)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%7C%20DDD%20%7C%20CQRS-green.svg)](docs/architecture.md)
-[![Tests](https://img.shields.io/badge/Tests-100%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-113%20Passing-brightgreen.svg)](tests/)
 
-Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, y almacenamiento de reportes Markdown en **Amazon S3**.
+Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, orquestación distribuida resiliente con **AWS Step Functions**, y persistencia de estado con **Amazon DynamoDB** y **Amazon S3**.
 
-El proyecto sigue rigurosamente los principios de **`arch-core`**: arquitectura en **dos capas principales (`app/` y `context/`)**, Arquitectura Hexagonal (Ports & Adapters), DDD, CQRS, **Cadena de Responsabilidad (Chain of Responsibility)** para la orquestación de casos de uso, observabilidad desacoplada con **AWS Lambda Powertools**, y manejo funcional de errores mediante **Railway-Oriented Programming (`Result[O, E]`)**.
+El proyecto sigue rigurosamente la metodología de arquitectura de software diseñada por **Luis Ruiz** (formalizada bajo la especificación **`arch-core`**), la cual compila y refina años de experiencia en ingeniería de software y cloud computing: arquitectura estricta en **dos capas principales (`app/` y `context/`)**, Arquitectura Hexagonal (Ports & Adapters), Domain-Driven Design (DDD) táctico, Segregación de Comandos y Consultas (CQRS), **Cadena de Responsabilidad (Chain of Responsibility)** para la orquestación atómica de casos de uso, Value Objects para tipado e hidratación de primitivos, inyección manual de dependencias, observabilidad desacoplada con **AWS Lambda Powertools**, y manejo funcional de errores mediante **Railway-Oriented Programming (`Result[O, E]`)**.
 
 ---
 
 ## 🏛️ Arquitectura del Sistema
 
-El agente resuelve la limitación de timeout de 29 segundos de Amazon API Gateway mediante un **Patrón Asíncrono Desencadenado por Eventos (*Event-Driven Polling Pattern*)**:
+El agente resuelve las limitaciones de timeout y estados zombi mediante una **Solución Híbrida Enterprise (AWS Step Functions + DynamoDB + CQRS)**:
 
 ```mermaid
 sequenceDiagram
@@ -23,33 +25,50 @@ sequenceDiagram
     actor Client as Cliente / Frontend
     participant APIGW as Amazon API Gateway
     participant StartLambda as StartResearchFunction<br/>(POST /research)
+    participant SFN as AWS Step Functions<br/>(ResearchStateMachine)
+    participant JobsDB as DynamoDB (JobsTable)
     participant WorkerLambda as ExecuteResearchWorkerFunction<br/>(Background AI Agent)
     participant Bedrock as Amazon Bedrock<br/>(Claude + Strands SDK)
     participant Tavily as Tavily Web Search
     participant S3 as Amazon S3 Bucket<br/>(Reports Storage)
     participant StatusLambda as GetResearchStatusFunction<br/>(GET /research/{id})
 
-    Note over Client, APIGW: 1. Inicio de Investigación Asíncrona
+    Note over Client, APIGW: 1. Inicio de Investigación Asíncrona (Comando CQRS)
     Client->>APIGW: POST /research {"topic": "AI in Healthcare"}
-    APIGW->>StartLambda: Invoca Handler POST
-    StartLambda->>WorkerLambda: Invocación Asíncrona (Event)
+    APIGW->>StartLambda: Invoca Handler POST (Rate Limited)
+    StartLambda->>SFN: Inicia State Machine (Async)
     StartLambda-->>Client: 202 Accepted {"job_id": "uuid-123", "status": "IN_PROGRESS", "status_url": "/research/uuid-123"}
 
-    Note over WorkerLambda, S3: 2. Ejecución de Fondo del Agente IA (ReAct)
+    Note over SFN, S3: 2. Orquestación Resiliente de Fondo (Step Functions)
+    SFN->>JobsDB: Direct SDK PutItem {pk: "JOB#uuid-123", status: "IN_PROGRESS"}
+    SFN->>WorkerLambda: Invoca Worker con Retry (3 intentos) y Catch
     WorkerLambda->>Bedrock: Inicia ciclo ReAct con System Prompt
     loop Razonamiento y Búsqueda Web
         Bedrock->>Tavily: Ejecuta web_search(query)
         Tavily-->>Bedrock: Resultados y fuentes relevantes
     end
-    Bedrock-->>WorkerLambda: Síntesis y Reporte estructurado en Markdown
+    Bedrock-->>WorkerLambda: Síntesis y Reporte en Markdown
     WorkerLambda->>S3: PutObject reports/uuid-123.md
+    WorkerLambda-->>SFN: Retorna s3_key
+    
+    alt Éxito
+        SFN->>JobsDB: Direct SDK UpdateItem {status: "COMPLETED", s3_key: "reports/uuid-123.md"}
+    else Fallo / Timeout (Catch: States.ALL)
+        SFN->>JobsDB: Direct SDK UpdateItem {status: "FAILED", error_message: "..."}
+    end
 
-    Note over Client, S3: 3. Consulta de Estado y Descarga Segura
+    Note over Client, StatusLambda: 3. Consulta de Estado (Lectura CQRS <5ms)
     Client->>APIGW: GET /research/uuid-123
-    APIGW->>StatusLambda: Invoca Handler GET
-    StatusLambda->>S3: Valida existencia del reporte
-    StatusLambda->>S3: Genera URL presignada regional (Válida por 1h)
-    StatusLambda-->>Client: 200 OK {"status": "COMPLETED", "s3_report_url": "https://s3..."}
+    APIGW->>StatusLambda: Invoca Handler GET (Rate Limited)
+    StatusLambda->>JobsDB: GetItem pk="JOB#uuid-123"
+    alt Si COMPLETED
+        StatusLambda->>S3: Genera URL presignada regional (Válida por 1h)
+        StatusLambda-->>Client: 200 OK {"status": "COMPLETED", "s3_report_url": "https://s3..."}
+    else Si FAILED
+        StatusLambda-->>Client: 200 OK {"status": "FAILED", "error": "Detalle del error"}
+    else Si IN_PROGRESS
+        StatusLambda-->>Client: 200 OK {"status": "IN_PROGRESS"}
+    end
 ```
 
 ---
@@ -69,7 +88,7 @@ serverless-research-agent-aws/
 │   │   │   │   └── execute_research_worker_handler.py
 │   │   │   ├── powertools.py             # Instancias singleton de Logger, Tracer y Metrics
 │   │   │   └── response.py               # Mapeador de Result y DomainError a respuestas HTTP
-│   │   └── controllers/                  # Controladores CQRS con decoradores de observabilidad
+│   │   └── controllers/                  # Controladores CQRS con decoradores
 │   │       ├── base.py                   # Contratos ICommandHandler y IQueryHandler
 │   │       ├── start_research_controller.py
 │   │       ├── get_research_status_controller.py
@@ -78,28 +97,33 @@ serverless-research-agent-aws/
 │   │
 │   └── context/                          # CAPA 2: BOUNDED CONTEXTS & CORE DDD
 │       ├── kit/                          # Kit de utilidades y bloques fundamentales reutilizables
+│       │   ├── aggregate_root.py         # Base para Entidades y Aggregates de Dominio
 │       │   ├── chain/                    # Motor de Chain of Responsibility (ChainBuilder, Step)
 │       │   ├── command/                  # Abstracciones y decoradores para Comandos (CQRS)
 │       │   ├── query/                    # Abstracciones y decoradores para Consultas (CQRS)
 │       │   ├── criteria/                 # Patrón Criteria (Filtros, Ordenamiento, Paginación)
-│       │   ├── dtos/                     # DTOs (Result, Optional, Either, Metadata, MetricUnit)
-│       │   ├── errors/                   # Jerarquía de DomainError (Validation, NotFound, etc.)
-│       │   ├── service/                  # 18 Contratos de servicios e interfaces abstractas
+│       │   ├── dtos/                     # DTOs (Result, Optional, Either, Metadata)
+│       │   ├── errors/                   # Jerarquía de DomainError (Validation, NotFound, RateLimit)
+│       │   ├── service/                  # Contratos de servicios e interfaces abstractas
 │       │   └── vo/                       # Value Objects (Uuid, Date, String, Number, Boolean)
 │       │
 │       └── research/                     # Bounded Context de Investigación
-│           ├── domain/                   # Puertos e interfaces del negocio
-│           │   └── ports.py              # IReportStoragePort, IResearchAgentPort, IAsyncWorkerInvokerPort
+│           ├── domain/                   # Entidades, Puertos e interfaces del negocio
+│           │   ├── entities/             # ResearchJob (AggregateRoot), ResearchJobStatus
+│           │   └── ports.py              # IResearchJobRepository, IStateMachineInvokerPort, IReportStoragePort
 │           ├── application/              # Casos de Uso estructurados como Pipelines de Pasos
 │           │   ├── dtos/                 # DTOs inmutables de entrada y salida
 │           │   └── use_cases/            # StartResearchUseCase, GetResearchStatusUseCase, ExecuteResearchWorkerUseCase
 │           └── infrastructure/           # Adaptadores concretos y Ensamblaje Manual
-│               ├── infrastructure_factory.py # Fábrica abstracta de inyección de dependencias
-│               ├── bedrock_agent_adapter.py  # Adaptador Strands + Amazon Bedrock
-│               ├── s3_storage_adapter.py     # Adaptador de almacenamiento Amazon S3
-│               ├── lambda_invoker_adapter.py # Adaptador de invocación asíncrona de AWS Lambda
-│               ├── tavily_search_tool.py     # Tool de búsqueda web con Tavily API
-│               └── powertools_adapters.py    # Adaptadores de observabilidad (Logger/Metrics)
+│               ├── infrastructure_factory.py        # Fábrica abstracta de inyección de dependencias
+│               ├── dynamodb_job_repository_adapter.py # Adaptador DynamoDB para ResearchJob
+│               ├── step_functions_invoker_adapter.py # Adaptador de inicio en Step Functions
+│               ├── dynamodb_rate_limiter_adapter.py # Adaptador de Rate Limiting atómico con TTL
+│               ├── bedrock_agent_adapter.py         # Adaptador Strands + Amazon Bedrock
+│               ├── s3_storage_adapter.py            # Adaptador de almacenamiento Amazon S3
+│               ├── lambda_invoker_adapter.py        # Adaptador de invocación directa
+│               ├── tavily_search_tool.py            # Tool de búsqueda web con Tavily API
+│               └── powertools_adapters.py           # Adaptadores de observabilidad (Logger/Metrics)
 │
 ├── docs/                                 # DOCUMENTACIÓN TÉCNICA
 │   ├── architecture.md                   # Especificación detallada de arquitectura y flujos
@@ -107,13 +131,19 @@ serverless-research-agent-aws/
 │   └── adr/                              # Architecture Decision Records (ADRs)
 │       ├── 0001-use-serverless-ai-agent-architecture.md
 │       ├── 0002-async-agent-execution.md
-│       └── 0003-two-layer-clean-architecture-and-design-patterns.md
+│       ├── 0003-two-layer-clean-architecture-and-design-patterns.md
+│       ├── 0004-distributed-rate-limiting-with-dynamodb.md
+│       └── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
 │
-├── tests/                                # SUITE INTEGRAL DE PRUEBAS (100 Tests)
+├── tests/                                # SUITE INTEGRAL DE PRUEBAS (113 Tests)
 │   ├── test_controllers.py
 │   ├── test_handlers.py
 │   ├── test_decorators.py
 │   ├── test_domain_result.py
+│   ├── test_research_job_entity.py
+│   ├── test_dynamodb_job_repository.py
+│   ├── test_step_functions_invoker.py
+│   ├── test_dynamodb_rate_limiter.py
 │   └── test_kit_*.py                     # Tests unitarios del módulo kit
 │
 ├── template.yaml                         # Infraestructura como Código (AWS SAM Template)
@@ -125,124 +155,39 @@ serverless-research-agent-aws/
 ## 🎯 Patrones de Diseño Implementados
 
 1. **Arquitectura Hexagonal (Ports & Adapters):** Aislamiento absoluto de la lógica de negocio. Los casos de uso y el dominio no conocen los SDKs de AWS (`boto3`) ni los frameworks de presentación.
-2. **Segregación de Responsabilidad de Comandos y Consultas (CQRS):** Separación limpia entre comandos que alteran estado (`CommandHandler`) y lecturas de datos (`QueryHandler`).
+2. **Segregación de Responsabilidad de Comandos y Consultas (CQRS):** Separación limpia entre comandos que alteran estado (`CommandHandler`) y lecturas de datos ultrarrápidas (`QueryHandler`).
 3. **Cadena de Responsabilidad (Chain of Responsibility):** Todos los casos de uso se ejecutan como un pipeline secuencial de pasos atómicos (`Step[I, O, C]`) que operan sobre un contexto compartido (`Context`).
-4. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
-5. **Patrón Decorador (Decorator Pattern):** La observabilidad (logs estructurados en JSON, métricas de CloudWatch, trazas distribuidas) se aplica envolviendo controladores sin contaminar el dominio.
-6. **Inyección Manual de Dependencias mediante Abstract Factory:** Ensamblaje determinista sin magia de contenedores IoC ni sobrecarga de *reflection*.
-7. **Objetos de Valor (Value Objects):** Encapsulación de primitivos con validación intrínseca (`Uuid`, `Date`, `String`, `Number`, `Boolean`).
+4. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
+5. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
+6. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
 
 ---
 
-## 🚀 Especificación de la API REST
+## 🚀 Despliegue en AWS (SAM CLI)
 
-> 📄 **Contrato OpenAPI 3.0:** Para consultar la especificación completa, esquemas de datos o importar el contrato en **Swagger UI** o **Postman**, revisa [`docs/openapi.yaml`](docs/openapi.yaml).
+### Prerrequisitos
+1. [AWS CLI](https://aws.amazon.com/cli/) y [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) instalados y configurados con credenciales de AWS.
+2. [Tavily API Key](https://tavily.com/) almacenada en AWS Systems Manager Parameter Store:
+   ```bash
+   aws ssm put-parameter \
+     --name "/serverless-research-agent/tavily-api-key" \
+     --type "SecureString" \
+     --value "tvly-TU_API_KEY_AQUI" \
+     --region us-east-1
+   ```
 
-### 1. Iniciar Investigación
-* **Endpoint:** `POST /research`
-* **Código de Éxito:** `202 Accepted`
-
-**Body (JSON):**
-```json
-{
-  "topic": "Arquitecturas Serverless y Modelos ReAct en 2026",
-  "depth": "detailed",
-  "format": "markdown",
-  "search_limit": 5
-}
-```
-
-**Respuesta:**
-```json
-{
-  "job_id": "8f0a2c3a-23ef-4b2a-8742-fa32c748c901",
-  "status": "IN_PROGRESS",
-  "message": "Investigación iniciada exitosamente.",
-  "status_url": "/research/8f0a2c3a-23ef-4b2a-8742-fa32c748c901"
-}
-```
-
----
-
-### 2. Consultar Estado y Descargar Reporte
-* **Endpoint:** `GET /research/{job_id}`
-* **Código de Éxito:** `200 OK`
-
-**Respuesta (En progreso):**
-```json
-{
-  "job_id": "8f0a2c3a-23ef-4b2a-8742-fa32c748c901",
-  "status": "IN_PROGRESS",
-  "message": "La investigación sigue en progreso. Por favor intenta en unos segundos.",
-  "s3_report_url": null
-}
-```
-
-**Respuesta (Completado):**
-```json
-{
-  "job_id": "8f0a2c3a-23ef-4b2a-8742-fa32c748c901",
-  "status": "COMPLETED",
-  "message": "Investigación completada exitosamente.",
-  "s3_report_url": "https://serverless-research-agent-reports-bucket.s3.mx-central-1.amazonaws.com/reports/8f0a2c3a-23ef-4b2a-8742-fa32c748c901.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600..."
-}
-```
-
----
-
-## 🛠️ Requisitos Previos y Configuración
-
-- **Python 3.12+**
-- **AWS CLI** configurado con credenciales activas (`aws configure`).
-- **AWS SAM CLI** instalado.
-- **Tavily API Key** ([Obtener API Key gratuita de Tavily](https://tavily.com)).
-- Acceso habilitado a **Anthropic Claude en Amazon Bedrock** en la región de despliegue.
-
----
-
-## 🧪 Ejecución de Pruebas Unitarias
-
-La solución cuenta con **93 pruebas unitarias** que validan controladores, handlers, pipelines de casos de uso, adaptadores, decoradores y bloques del kit con **0 llamadas externas** requeridas:
+### Pasos de Despliegue
 
 ```bash
-# Crear y activar entorno virtual
-python3 -m venv .venv
-source .venv/bin/activate
+# 1. Validar la plantilla SAM
+sam validate
 
-# Instalar dependencias
-pip install -r src/requirements.txt pytest
+# 2. Construir los artefactos
+sam build
 
-# Ejecutar la suite completa de pruebas
-pytest -v
+# 3. Desplegar en AWS
+sam deploy --guided
 ```
-
----
-
-## 📦 Despliegue en AWS con SAM
-
-1. **Construir los artefactos de compilación:**
-   ```bash
-   sam build
-   ```
-
-2. **Desplegar la infraestructura:**
-   ```bash
-   sam deploy --guided
-   ```
-
-   Durante el despliegue interactivo, se te solicitará:
-   - **Stack Name:** `serverless-research-agent-aws`
-   - **AWS Region:** `us-east-1` (o tu región con Bedrock habilitado)
-   - **Parameter TavilyApiKey:** `tvly-tu-api-key-aqui`
-   - **Parameter BedrockModelId:** `global.anthropic.claude-sonnet-4-5-20250929-v1:0`
-
-3. **Obtener el Endpoint de API Gateway:**
-   Al finalizar el despliegue, SAM mostrará los *Outputs* con la URL base de la API:
-   ```text
-   Key                 ApiBaseUrl
-   Description         URL base de API Gateway
-   Value               https://abcdef123.execute-api.us-east-1.amazonaws.com/Prod/
-   ```
 
 ---
 
@@ -254,3 +199,4 @@ pytest -v
 - 🏛️ [**ADR 0002:** Patrón de Ejecución Asíncrona para Agentes de IA en AWS](docs/adr/0002-async-agent-execution.md)
 - 🏛️ [**ADR 0003:** Arquitectura en Dos Capas e Implementación de Patrones de Diseño](docs/adr/0003-two-layer-clean-architecture-and-design-patterns.md)
 - 🏛️ [**ADR 0004:** Control de Tasa Distribuido (Rate Limiting) con Amazon DynamoDB y Decoradores CQRS](docs/adr/0004-distributed-rate-limiting-with-dynamodb.md)
+- 🏛️ [**ADR 0005:** Solución Híbrida: Orquestación Resiliente con AWS Step Functions y Persistencia en DynamoDB](docs/adr/0005-hybrid-step-functions-and-dynamodb-orchestration.md)

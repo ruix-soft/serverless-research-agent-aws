@@ -31,7 +31,7 @@ Implementar un esquema de **Rate Limiting Distribuido** basado en el algoritmo d
    - Tabla `RateLimitsTable` con clave de partición `pk = "{key}:{window_id}"`.
    - Operación atómica `UpdateItem` con `ADD request_count :1` y `SET expires_at = if_not_exists(expires_at, :ttl)`.
    - El atributo `expires_at` permite a DynamoDB purgar automáticamente las ventanas de tiempo viejas sin consumo de unidades de escritura (WCU).
-2. **Integración con la Arquitectura en Dos Capas (`arch-core`):**
+2. **Integración con la Arquitectura en Dos Capas (Metodología Luis Ruiz / `arch-core`):**
    - Contrato abstracto `RateLimiterService` en `context/kit/service/`.
    - Adaptador concreto `DynamoDBRateLimiterAdapter` en `context/research/infrastructure/`.
    - Decoradores CQRS:

@@ -27,7 +27,7 @@ class ExecuteResearchWorkerCommandHandler(ICommandHandler[ExecuteResearchWorkerI
 class ExecuteResearchWorkerController(BaseController[ExecuteResearchWorkerInputDTO, ExecuteResearchWorkerOutputDTO]):
     """
     Controller for background worker research execution.
-    Follows arch-core strict sequential construction:
+    Follows Luis Ruiz architectural methodology (arch-core) strict sequential construction:
     1. Instantiate Use Case using InfrastructureFactory.
     2. Wrap Use Case in CommandHandler.
     3. Retrieve generic observability tools.
