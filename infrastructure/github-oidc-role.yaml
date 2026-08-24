@@ -19,6 +19,8 @@ Resources:
       Url: "https://token.actions.githubusercontent.com"
       ClientIdList:
         - "sts.amazonaws.com"
+        - "https://github.com/ruix-soft"
+        - "https://github.com/luisalbertoruiz"
       ThumbprintList:
         - "6938fd4d98bab03faadb97b34396831e3780aea1"
         - "1c58a3a8518e8759bf075b76b750d4f8d264fcd9"
@@ -40,7 +42,10 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
+                token.actions.githubusercontent.com:aud:
+                  - "sts.amazonaws.com"
+                  - "https://github.com/ruix-soft"
+                  - "https://github.com/luisalbertoruiz"
               StringLike:
                 token.actions.githubusercontent.com:sub: "repo:*serverless-research-agent-aws:*"
       Policies:
