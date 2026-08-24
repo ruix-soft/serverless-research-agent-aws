@@ -11,13 +11,8 @@ Parameters:
     Default: "serverless-research-agent-aws"
     Description: GitHub repository name.
 
-Conditions:
-  # In most AWS accounts, the OIDC provider for token.actions.githubusercontent.com is created once.
-  # If needed, this template can deploy it or reference the existing one.
-  AlwaysTrue: !Equals [ "true", "true" ]
-
 Resources:
-  # 1. GitHub OIDC Identity Provider (si no existe previamente en la cuenta)
+  # 1. GitHub OIDC Identity Provider
   GitHubOIDCProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
@@ -25,9 +20,10 @@ Resources:
       ClientIdList:
         - "sts.amazonaws.com"
       ThumbprintList:
-        # Standard GitHub Actions OIDC Thumbprints
         - "6938fd4d98bab03faadb97b34396831e3780aea1"
         - "1c58a3a8518e8759bf075b76b750d4f8d264fcd9"
+        - "f879ab6f417e4052bb14777aa953b05a76e9b4f6"
+        - "a031c46782e6e6c662c2c87c76da9aa62ccabd8e"
 
   # 2. IAM Role asumible exclusivamente por GitHub Actions desde este repositorio
   GitHubActionsDeployRole:
@@ -44,7 +40,10 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
+                  - !Sub "repo:luisalbertoruiz/${RepositoryName}:*"
+                  - !Sub "repo:*${RepositoryName}:*"
               StringEquals:
                 token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
       Policies:
@@ -219,4 +218,3 @@ Outputs:
   OIDCProviderArn:
     Description: "ARN del Proveedor OIDC de GitHub"
     Value: !Ref GitHubOIDCProvider
-
