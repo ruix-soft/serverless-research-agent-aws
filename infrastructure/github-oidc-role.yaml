@@ -24,6 +24,7 @@ Resources:
         - "1c58a3a8518e8759bf075b76b750d4f8d264fcd9"
         - "f879ab6f417e4052bb14777aa953b05a76e9b4f6"
         - "a031c46782e6e6c662c2c87c76da9aa62ccabd8e"
+        - "227203b5317f3818cab5b5ce596132bf36748c0e"
 
   # 2. IAM Role asumible exclusivamente por GitHub Actions desde este repositorio
   GitHubActionsDeployRole:
@@ -42,14 +43,12 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
               StringLike:
-                # Soporta formato clásico y formato inmutable con IDs numéricos (julio 2026+)
-                # Clásico: repo:ruix-soft/serverless-research-agent-aws:ref:refs/heads/main
-                # Inmutable: repo:ruix-soft@214534244/serverless-research-agent-aws@1345128367:ref:refs/heads/main
+                # Soporta formato clasico y formato inmutable con IDs numericos (julio 2026+)
                 token.actions.githubusercontent.com:sub:
                   - !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
                   - !Sub "repo:${GitHubOrg}@*/${RepositoryName}@*:*"
       Policies:
-        # 1. Permisos para CloudFormation y SAM CLI
+        # 1. Permisos para CloudFormation y SAM CLI (incluyendo transformaciones Serverless)
         - PolicyName: SAMCloudFormationDeploymentPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -70,10 +69,18 @@ Resources:
                   - cloudformation:DeleteChangeSet
                   - cloudformation:ListStackResources
                   - cloudformation:ListChangeSets
+                  - cloudformation:ValidateTemplate
                 Resource:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/serverless-research-agent/*"
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-*/*"
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:aws:transform/*"
+                  - "arn:aws:cloudformation:*:*:transform/*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
 
         # 2. Permisos para S3 (Bucket de artefactos SAM y Bucket de Reportes)
         - PolicyName: S3DeploymentPolicy
@@ -169,16 +176,11 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - apigateway:GET
-                  - apigateway:POST
-                  - apigateway:PUT
-                  - apigateway:PATCH
-                  - apigateway:DELETE
+                  - apigateway:*
                 Resource:
-                  - "arn:aws:apigateway:*::/restapis"
-                  - "arn:aws:apigateway:*::/restapis/*"
+                  - "arn:aws:apigateway:*::*"
 
-        # 7. Permisos para IAM (Creación de roles de ejecución de las Lambdas y Step Functions)
+        # 7. Permisos para IAM (Creacion de roles de ejecucion de las Lambdas y Step Functions)
         - PolicyName: IAMDeploymentPolicy
           PolicyDocument:
             Version: '2012-10-17'
