@@ -19,8 +19,6 @@ Resources:
       Url: "https://token.actions.githubusercontent.com"
       ClientIdList:
         - "sts.amazonaws.com"
-        - "https://github.com/ruix-soft"
-        - "https://github.com/luisalbertoruiz"
       ThumbprintList:
         - "6938fd4d98bab03faadb97b34396831e3780aea1"
         - "1c58a3a8518e8759bf075b76b750d4f8d264fcd9"
@@ -42,12 +40,14 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                token.actions.githubusercontent.com:aud:
-                  - "sts.amazonaws.com"
-                  - "https://github.com/ruix-soft"
-                  - "https://github.com/luisalbertoruiz"
+                token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
               StringLike:
-                token.actions.githubusercontent.com:sub: "repo:*serverless-research-agent-aws:*"
+                # Soporta formato clásico y formato inmutable con IDs numéricos (julio 2026+)
+                # Clásico: repo:ruix-soft/serverless-research-agent-aws:ref:refs/heads/main
+                # Inmutable: repo:ruix-soft@214534244/serverless-research-agent-aws@1345128367:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
+                  - !Sub "repo:${GitHubOrg}@*/${RepositoryName}@*:*"
       Policies:
         # 1. Permisos para CloudFormation y SAM CLI
         - PolicyName: SAMCloudFormationDeploymentPolicy
