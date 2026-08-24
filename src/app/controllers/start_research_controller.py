@@ -50,13 +50,15 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
 
         # 1. Retrieve observability tools
         logger = factory.create_logger()
+        tracer = factory.create_tracer()
         metrics = factory.create_metrics()
 
-        # 2. Instantiate Use Case with State Machine Invoker and injected logger
+        # 2. Instantiate Use Case with State Machine Invoker and injected logger & tracer
         state_machine_invoker = factory.create_state_machine_invoker()
         use_case = StartResearchUseCase(
             state_machine_invoker=state_machine_invoker,
             logger=logger,
+            tracer=tracer,
         )
 
         # 3. Wrap in CommandHandler

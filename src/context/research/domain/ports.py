@@ -27,6 +27,17 @@ class IMetricsPort(ABC):
         pass
 
 
+class ITracerPort(ABC):
+    """Port for distributed tracing."""
+    @abstractmethod
+    def get_segment(self, ctx: Optional[Any] = None) -> Optional[Any]:
+        pass
+
+    @abstractmethod
+    def set_segment(self, ctx: Optional[Any], segment: Any) -> Any:
+        pass
+
+
 class IReportStoragePort(ABC):
     """Port for persisting and retrieving research reports in S3."""
     @abstractmethod
@@ -108,6 +119,10 @@ class IInfrastructureFactory(ABC):
 
     @abstractmethod
     def create_metrics(self) -> IMetricsPort:
+        pass
+
+    @abstractmethod
+    def create_tracer(self) -> ITracerPort:
         pass
 
     @abstractmethod

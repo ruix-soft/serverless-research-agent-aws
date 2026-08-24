@@ -50,13 +50,15 @@ class GetResearchStatusController(BaseController[GetResearchStatusInputDTO, GetR
 
         # 1. Retrieve observability tools
         logger = factory.create_logger()
+        tracer = factory.create_tracer()
         metrics = factory.create_metrics()
 
-        # 2. Instantiate Use Case with Job Repository, Report Storage and injected logger
+        # 2. Instantiate Use Case with Job Repository, Report Storage and injected logger & tracer
         use_case = GetResearchStatusUseCase(
             report_storage=factory.create_report_storage(),
             job_repository=factory.create_job_repository(),
             logger=logger,
+            tracer=tracer,
         )
 
         # 3. Wrap in QueryHandler

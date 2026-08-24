@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import Optional, Any, List
 from context.kit.chain import ChainBuilder, BaseChainStep
 from context.kit.chain.chain_step_logging_decorator import new_step_logging_decorator
+from context.kit.chain.chain_step_tracing_decorator import new_step_tracing_decorator
 from context.kit.service.logger_service import LoggerService
+from context.kit.service.tracer_service import TracerService
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError, new_domain_error
 from context.kit.errors.validation_error import new_validation_error
@@ -175,10 +177,12 @@ class GetResearchStatusUseCase:
         report_storage: IReportStoragePort,
         job_repository: Optional[IResearchJobRepository] = None,
         logger: Optional[LoggerService] = None,
+        tracer: Optional[TracerService] = None,
     ):
         self._report_storage = report_storage
         self._job_repository = job_repository
         self._logger = logger
+        self._tracer = tracer
 
         builder = ChainBuilder[GetResearchStatusInputDTO, GetResearchStatusOutputDTO, GetResearchStatusContext]()
         steps: List[BaseChainStep[GetResearchStatusInputDTO, GetResearchStatusOutputDTO, GetResearchStatusContext]] = [
@@ -189,7 +193,11 @@ class GetResearchStatusUseCase:
         ]
 
         for step in steps:
-            handler = new_step_logging_decorator(step, self._logger) if self._logger else step
+            handler: Any = step
+            if self._tracer:
+                handler = new_step_tracing_decorator(handler, self._tracer)
+            if self._logger:
+                handler = new_step_logging_decorator(handler, self._logger)
             builder.add_handler(handler)
 
         self._pipeline = builder.build()

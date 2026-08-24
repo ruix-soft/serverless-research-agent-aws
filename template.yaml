@@ -7,6 +7,7 @@ Globals:
     Runtime: python3.12
     Architectures:
       - x86_64
+    Tracing: Active
     Environment:
       Variables:
         REPORTS_BUCKET_NAME: !Ref ReportsBucket
@@ -14,7 +15,11 @@ Globals:
         JOBS_TABLE_NAME: !Ref JobsTable
         POWERTOOLS_SERVICE_NAME: serverless-research-agent
         POWERTOOLS_METRICS_NAMESPACE: ResearchAgent
+        POWERTOOLS_TRACER_CAPTURE_RESPONSE: "true"
+        POWERTOOLS_TRACER_CAPTURE_ERROR: "true"
         LOG_LEVEL: INFO
+  Api:
+    TracingEnabled: true
 
 Resources:
   # 1. Bucket privado para almacenar los reportes de investigación
@@ -72,6 +77,8 @@ Resources:
     Properties:
       Name: !Sub "serverless-research-agent-state-machine-${AWS::AccountId}-${AWS::Region}"
       Type: STANDARD
+      Tracing:
+        Enabled: true
       Definition:
         Comment: "Orquestación resiliente para Agente de Investigación con persistencia en DynamoDB"
         StartAt: PutJobInProgress

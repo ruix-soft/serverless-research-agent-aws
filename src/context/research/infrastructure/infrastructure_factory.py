@@ -8,7 +8,8 @@ from context.research.domain.ports import (
     IAsyncWorkerInvokerPort,
     IResearchAgentPort,
     ILoggerPort,
-    IMetricsPort
+    IMetricsPort,
+    ITracerPort,
 )
 from context.research.infrastructure.s3_storage_adapter import S3StorageAdapter
 from context.research.infrastructure.dynamodb_job_repository_adapter import DynamoDBJobRepositoryAdapter
@@ -17,7 +18,8 @@ from context.research.infrastructure.lambda_invoker_adapter import LambdaInvoker
 from context.research.infrastructure.bedrock_agent_adapter import BedrockAgentAdapter
 from context.research.infrastructure.powertools_adapters import (
     PowertoolsLoggerAdapter,
-    PowertoolsMetricsAdapter
+    PowertoolsMetricsAdapter,
+    PowertoolsTracerAdapter,
 )
 from context.research.infrastructure.dynamodb_rate_limiter_adapter import DynamoDBRateLimiterAdapter
 
@@ -29,6 +31,7 @@ _default_lambda_invoker = None
 _default_research_agent = None
 _default_logger = None
 _default_metrics = None
+_default_tracer = None
 _default_rate_limiter = None
 
 
@@ -44,9 +47,11 @@ class InfrastructureFactory(IInfrastructureFactory):
         research_agent: Optional[IResearchAgentPort] = None,
         logger: Optional[ILoggerPort] = None,
         metrics: Optional[IMetricsPort] = None,
+        tracer: Optional[ITracerPort] = None,
         rate_limiter: Optional[RateLimiterService] = None,
     ):
-        global _default_s3_storage, _default_job_repository, _default_state_machine_invoker, _default_lambda_invoker, _default_research_agent, _default_logger, _default_metrics, _default_rate_limiter
+        global _default_s3_storage, _default_job_repository, _default_state_machine_invoker, _default_lambda_invoker
+        global _default_research_agent, _default_logger, _default_metrics, _default_tracer, _default_rate_limiter
 
         if _default_s3_storage is None:
             _default_s3_storage = S3StorageAdapter()
@@ -62,6 +67,8 @@ class InfrastructureFactory(IInfrastructureFactory):
             _default_logger = PowertoolsLoggerAdapter()
         if _default_metrics is None:
             _default_metrics = PowertoolsMetricsAdapter()
+        if _default_tracer is None:
+            _default_tracer = PowertoolsTracerAdapter()
         if _default_rate_limiter is None:
             _default_rate_limiter = DynamoDBRateLimiterAdapter()
 
@@ -72,6 +79,7 @@ class InfrastructureFactory(IInfrastructureFactory):
         self._research_agent = research_agent or _default_research_agent
         self._logger = logger or _default_logger
         self._metrics = metrics or _default_metrics
+        self._tracer = tracer or _default_tracer
         self._rate_limiter = rate_limiter or _default_rate_limiter
 
     def create_report_storage(self) -> IReportStoragePort:
@@ -94,6 +102,9 @@ class InfrastructureFactory(IInfrastructureFactory):
 
     def create_metrics(self) -> IMetricsPort:
         return self._metrics
+
+    def create_tracer(self) -> ITracerPort:
+        return self._tracer
 
     def create_rate_limiter(self) -> RateLimiterService:
         return self._rate_limiter

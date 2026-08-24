@@ -40,13 +40,15 @@ class ExecuteResearchWorkerController(BaseController[ExecuteResearchWorkerInputD
 
         # 1. Retrieve observability tools
         logger = factory.create_logger()
+        tracer = factory.create_tracer()
         metrics = factory.create_metrics()
 
-        # 2. Instantiate Use Case with injected logger
+        # 2. Instantiate Use Case with injected logger & tracer
         use_case = ExecuteResearchWorkerUseCase(
             research_agent=factory.create_research_agent(),
             report_storage=factory.create_report_storage(),
             logger=logger,
+            tracer=tracer,
         )
 
         # 3. Wrap in CommandHandler

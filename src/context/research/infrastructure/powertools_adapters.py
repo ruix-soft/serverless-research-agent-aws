@@ -1,9 +1,10 @@
 import os
 from typing import Any, Dict, Optional, Union
-from aws_lambda_powertools import Logger, Metrics
-from context.research.domain.ports import ILoggerPort, IMetricsPort
+from aws_lambda_powertools import Logger, Metrics, Tracer
+from context.research.domain.ports import ILoggerPort, IMetricsPort, ITracerPort
 from context.kit.service.logger_service import LoggerService
 from context.kit.service.metrics_service import MetricsService
+from context.kit.service.tracer_service import TracerService, Segment
 from context.kit.dtos.metric_unit import MetricUnit
 
 _service_name = os.getenv("POWERTOOLS_SERVICE_NAME", "serverless-research-agent")
@@ -11,6 +12,7 @@ _namespace = os.getenv("POWERTOOLS_METRICS_NAMESPACE", "ResearchAgent")
 
 _pt_logger = Logger(service=_service_name)
 _pt_metrics = Metrics(namespace=_namespace, service=_service_name)
+_pt_tracer = Tracer(service=_service_name)
 
 
 class PowertoolsLoggerAdapter(ILoggerPort, LoggerService):
@@ -75,3 +77,54 @@ class PowertoolsMetricsAdapter(IMetricsPort, MetricsService):
     def publish_stored_metrics(self, ctx: Optional[Any] = None) -> None:
         # Powertools publishes metrics automatically via decorator @metrics.log_metrics
         pass
+
+
+class PowertoolsSegmentAdapter(Segment):
+    """Adapter wrapping an active AWS X-Ray subsegment."""
+
+    def __init__(self, pt_subsegment: Any):
+        self._subsegment = pt_subsegment
+
+    def add_new_subsegment(self, name: str) -> "Segment":
+        if hasattr(self._subsegment, "create_subsegment"):
+            try:
+                child = self._subsegment.create_subsegment(name)
+                return PowertoolsSegmentAdapter(child)
+            except Exception:
+                pass
+        return self
+
+    def add_metadata(self, key: str, value: Any) -> None:
+        if self._subsegment and hasattr(self._subsegment, "put_metadata"):
+            try:
+                self._subsegment.put_metadata(key, value)
+            except Exception:
+                pass
+
+    def close(self, err: Optional[Any] = None) -> None:
+        if self._subsegment and hasattr(self._subsegment, "close"):
+            try:
+                self._subsegment.close()
+            except Exception:
+                pass
+
+
+class PowertoolsTracerAdapter(ITracerPort, TracerService):
+    """Adapter wrapping AWS Lambda Powertools Tracer, implementing TracerService & ITracerPort."""
+
+    def __init__(self, pt_tracer: Optional[Tracer] = None):
+        self._tracer = pt_tracer or _pt_tracer
+
+    def get_segment(self, ctx: Optional[Any] = None) -> Optional[Segment]:
+        try:
+            provider = getattr(self._tracer, "provider", None)
+            if provider and hasattr(provider, "get_trace_entity"):
+                entity = provider.get_trace_entity()
+                if entity:
+                    return PowertoolsSegmentAdapter(entity)
+        except Exception:
+            pass
+        return None
+
+    def set_segment(self, ctx: Optional[Any], segment: Segment) -> Any:
+        return ctx

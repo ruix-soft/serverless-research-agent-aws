@@ -78,6 +78,8 @@ class MockResearchAgent(IResearchAgentPort):
 
 
 from context.kit.service.logger_service import LoggerService
+from context.kit.service.tracer_service import TracerService, Segment
+from context.research.domain.ports import ITracerPort
 
 
 class MockLogger(ILoggerPort, LoggerService):
@@ -104,6 +106,40 @@ class MockMetrics(IMetricsPort):
     def add_metric(self, name: str, unit: str, value: float) -> None: pass
 
 
+class MockSegment(Segment):
+    def __init__(self, name: str):
+        self.name = name
+        self.metadata: Dict[str, Any] = {}
+        self.closed = False
+        self.err: Optional[Any] = None
+        self.subsegments: list = []
+
+    def add_new_subsegment(self, name: str) -> "Segment":
+        child = MockSegment(name)
+        self.subsegments.append(child)
+        return child
+
+    def add_metadata(self, key: str, value: Any) -> None:
+        self.metadata[key] = value
+
+    def close(self, err: Optional[Any] = None) -> None:
+        self.closed = True
+        self.err = err
+
+
+class MockTracer(ITracerPort, TracerService):
+    def __init__(self):
+        self.root_segment = MockSegment("Root")
+        self.subsegments_created: list = []
+
+    def get_segment(self, ctx: Optional[Any] = None) -> Optional[Segment]:
+        return self.root_segment
+
+    def set_segment(self, ctx: Optional[Any], segment: Segment) -> Any:
+        self.subsegments_created.append(segment)
+        return ctx
+
+
 class MockRateLimiter(RateLimiterService):
     def __init__(self, allow_requests: bool = True):
         self.allow_requests = allow_requests
@@ -122,6 +158,7 @@ class MockInfrastructureFactory(IInfrastructureFactory):
         self.worker_invoker = MockAsyncWorkerInvoker()
         self.agent = MockResearchAgent()
         self.logger = MockLogger()
+        self.tracer = MockTracer()
         self.metrics = MockMetrics()
         self.rate_limiter = MockRateLimiter(allow_requests=allow_rate_limit)
 
@@ -131,6 +168,7 @@ class MockInfrastructureFactory(IInfrastructureFactory):
     def create_async_worker_invoker(self) -> IAsyncWorkerInvokerPort: return self.worker_invoker
     def create_research_agent(self) -> IResearchAgentPort: return self.agent
     def create_logger(self) -> ILoggerPort: return self.logger
+    def create_tracer(self) -> ITracerPort: return self.tracer
     def create_metrics(self) -> IMetricsPort: return self.metrics
     def create_rate_limiter(self) -> RateLimiterService: return self.rate_limiter
 
@@ -278,3 +316,21 @@ def test_chain_step_logging_injected_from_controller():
     assert "ValidateStartResearchStep" in step_handler_names
     assert "InvokeStateMachineStep" in step_handler_names
     assert "BuildStartResearchOutputStep" in step_handler_names
+
+
+def test_chain_step_tracing_injected_from_controller():
+    factory = MockInfrastructureFactory()
+    controller = StartResearchController(factory=factory)
+
+    dto = StartResearchInputDTO(topic="AI Chain Tracing Test")
+    result = controller.run(dto, ctx=Metadata(user="trace_user", ip="127.0.0.1"))
+
+    assert result.is_ok() is True
+    # Verify that the tracer captured subsegments for the chain steps
+    subsegment_names = [sub.name for sub in factory.tracer.root_segment.subsegments]
+    assert "ValidateStartResearchStep" in subsegment_names
+    assert "InvokeStateMachineStep" in subsegment_names
+    assert "BuildStartResearchOutputStep" in subsegment_names
+    # Verify all subsegments were closed properly
+    for sub in factory.tracer.root_segment.subsegments:
+        assert sub.closed is True

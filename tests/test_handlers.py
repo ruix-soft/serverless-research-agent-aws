@@ -240,6 +240,7 @@ def test_get_research_status_handler_full_flow_with_dynamo():
         def create_research_agent(self): return MagicMock()
         def create_logger(self): return MagicMock()
         def create_metrics(self): return MagicMock()
+        def create_tracer(self): return MagicMock()
         def create_rate_limiter(self): return mock_rate_limiter
 
     real_controller = GetResearchStatusController(factory=HandlerTestFactory())
