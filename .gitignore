@@ -217,4 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+.aws-sam/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
 samconfig.toml
