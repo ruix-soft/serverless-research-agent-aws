@@ -87,10 +87,21 @@ Resources:
           BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
           TAVILY_API_KEY: "{{resolve:ssm:/serverless-research-agent/tavily-api-key:1}}"
       Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref ReportsBucket
-        - AmazonBedrockFullAccess
-        - AWSMarketplaceFullAccess
+        # 1. Solo permisos de escritura y carga de objetos en el Bucket de Reportes
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Sub "${ReportsBucket.Arn}/*"
+        # 2. Solo permisos de inferencia para modelos de Bedrock y perfiles regionales
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - "arn:aws:bedrock:*::foundation-model/*"
+                - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
 
 Outputs:
   ResearchApiEndpoint:
