@@ -40,25 +40,26 @@ Resources:
       CodeUri: src/
       Handler: handler.lambda_handler
       Policies:
-        # Permisos mínimos de lectura/escritura en S3
         - S3CrudPolicy:
             BucketName: !Ref ReportsBucket
-        # Permiso explícito para invocar modelos en Amazon Bedrock
+        - AmazonBedrockFullAccess
+        - AWSMarketplaceFullAccess
         - Statement:
             - Effect: Allow
               Action:
-                - bedrock:InvokeModel*
-                - bedrock:InvokeModelWithResponseStream
-                - aws-marketplace:ViewSubscriptions
-                - aws-marketplace:Subscribe
+                - lambda:InvokeFunction
               Resource: "*"
       Events:
-        # Endpoint REST HTTP en API Gateway
-        ResearchApi:
+        StartResearchApi:
           Type: Api
           Properties:
             Path: /research
             Method: post
+        GetResearchStatusApi:
+          Type: Api
+          Properties:
+            Path: /research/{job_id}
+            Method: get
 
 Outputs:
   ResearchApiEndpoint:
