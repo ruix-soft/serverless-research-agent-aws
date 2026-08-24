@@ -213,6 +213,20 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/serverless-research-agent/*"
 
+        # 9. Permisos para CloudWatch Dashboards
+        - PolicyName: CloudWatchDashboardDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:GetDashboard
+                  - cloudwatch:DeleteDashboard
+                  - cloudwatch:ListDashboards
+                Resource:
+                  - !Sub "arn:aws:cloudwatch::${AWS::AccountId}:dashboard/Serverless-Research-Agent-*"
+
 Outputs:
   RoleArn:
     Description: "ARN del Rol IAM para configurar en GitHub Actions (AWS_ROLE_ARN)"
