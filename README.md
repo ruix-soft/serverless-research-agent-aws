@@ -5,7 +5,7 @@
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet-darkblue.svg)](https://aws.amazon.com/bedrock/)
 [![OpenAPI 3.0](https://img.shields.io/badge/OpenAPI-3.0.3-brightgreen.svg)](docs/openapi.yaml)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%7C%20DDD%20%7C%20CQRS-green.svg)](docs/architecture.md)
-[![Tests](https://img.shields.io/badge/Tests-93%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-100%20Passing-brightgreen.svg)](tests/)
 
 Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, y almacenamiento de reportes Markdown en **Amazon S3**.
 
@@ -109,7 +109,7 @@ serverless-research-agent-aws/
 │       ├── 0002-async-agent-execution.md
 │       └── 0003-two-layer-clean-architecture-and-design-patterns.md
 │
-├── tests/                                # SUITE INTEGRAL DE PRUEBAS (93 Tests)
+├── tests/                                # SUITE INTEGRAL DE PRUEBAS (100 Tests)
 │   ├── test_controllers.py
 │   ├── test_handlers.py
 │   ├── test_decorators.py
@@ -253,3 +253,4 @@ pytest -v
 - 🏛️ [**ADR 0001:** Elección de Arquitectura Serverless-First para el Agente de Investigación](docs/adr/0001-use-serverless-ai-agent-architecture.md)
 - 🏛️ [**ADR 0002:** Patrón de Ejecución Asíncrona para Agentes de IA en AWS](docs/adr/0002-async-agent-execution.md)
 - 🏛️ [**ADR 0003:** Arquitectura en Dos Capas e Implementación de Patrones de Diseño](docs/adr/0003-two-layer-clean-architecture-and-design-patterns.md)
+- 🏛️ [**ADR 0004:** Control de Tasa Distribuido (Rate Limiting) con Amazon DynamoDB y Decoradores CQRS](docs/adr/0004-distributed-rate-limiting-with-dynamodb.md)

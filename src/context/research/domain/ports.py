@@ -57,6 +57,9 @@ class IResearchAgentPort(ABC):
         pass
 
 
+from context.kit.service.rate_limiter_service import RateLimiterService
+
+
 class IInfrastructureFactory(ABC):
     """Abstract Factory to provide infrastructure adapters and cross-cutting ports."""
     @abstractmethod
@@ -78,4 +81,9 @@ class IInfrastructureFactory(ABC):
     @abstractmethod
     def create_metrics(self) -> IMetricsPort:
         pass
+
+    @abstractmethod
+    def create_rate_limiter(self) -> RateLimiterService:
+        pass
+
 

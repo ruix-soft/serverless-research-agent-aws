@@ -42,5 +42,8 @@ class BaseController(Generic[InputDTO, OutputDTO], ABC):
 
     def run(self, input_dto: InputDTO, ctx: Optional[Any] = None) -> Result[OutputDTO, DomainError]:
         if hasattr(self._handler, "handle"):
-            return self._handler.handle(input_dto)
+            try:
+                return self._handler.handle(input_dto, ctx)
+            except TypeError:
+                return self._handler.handle(input_dto)
         return self._handler.execute(input_dto, ctx)

@@ -1,5 +1,6 @@
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from typing import Any, Optional
@@ -9,14 +10,17 @@ from context.research.domain.ports import (
     IAsyncWorkerInvokerPort,
     IResearchAgentPort,
     ILoggerPort,
-    IMetricsPort
+    IMetricsPort,
 )
+from context.kit.service.rate_limiter_service import RateLimiterService
+from context.kit.dtos.metadata import Metadata
 from app.controllers.start_research_controller import StartResearchController
 from app.controllers.get_research_status_controller import GetResearchStatusController
 from app.controllers.execute_research_worker_controller import ExecuteResearchWorkerController
 from context.research.application.dtos.start_research_dto import StartResearchInputDTO
 from context.research.application.dtos.get_research_status_dto import GetResearchStatusInputDTO
 from context.research.application.dtos.execute_research_worker_dto import ExecuteResearchWorkerInputDTO
+
 
 class MockReportStorage(IReportStoragePort):
     def __init__(self):
@@ -57,19 +61,31 @@ class MockMetrics(IMetricsPort):
     def add_metric(self, name: str, unit: str, value: float) -> None: pass
 
 
+class MockRateLimiter(RateLimiterService):
+    def __init__(self, allow_requests: bool = True):
+        self.allow_requests = allow_requests
+        self.invocations = []
+
+    def allow(self, key: str, limit: int, window_ms: int, ctx: Optional[Any] = None) -> bool:
+        self.invocations.append({"key": key, "limit": limit, "window_ms": window_ms, "ctx": ctx})
+        return self.allow_requests
+
+
 class MockInfrastructureFactory(IInfrastructureFactory):
-    def __init__(self):
+    def __init__(self, allow_rate_limit: bool = True):
         self.storage = MockReportStorage()
         self.invoker = MockAsyncWorkerInvoker()
         self.agent = MockResearchAgent()
         self.logger = MockLogger()
         self.metrics = MockMetrics()
+        self.rate_limiter = MockRateLimiter(allow_requests=allow_rate_limit)
 
     def create_report_storage(self) -> IReportStoragePort: return self.storage
     def create_async_worker_invoker(self) -> IAsyncWorkerInvokerPort: return self.invoker
     def create_research_agent(self) -> IResearchAgentPort: return self.agent
     def create_logger(self) -> ILoggerPort: return self.logger
     def create_metrics(self) -> IMetricsPort: return self.metrics
+    def create_rate_limiter(self) -> RateLimiterService: return self.rate_limiter
 
 
 def test_start_research_controller_success():
@@ -77,13 +93,26 @@ def test_start_research_controller_success():
     controller = StartResearchController(factory=factory)
 
     dto = StartResearchInputDTO(topic="AI in Healthcare")
-    result = controller.run(dto)
+    result = controller.run(dto, ctx=Metadata(user="192.168.1.1", ip="192.168.1.1"))
 
     assert result.is_ok() is True
     assert result.value.status == "IN_PROGRESS"
     assert result.value.job_id is not None
     assert len(factory.invoker.invocations) == 1
     assert factory.invoker.invocations[0]["topic"] == "AI in Healthcare"
+    assert len(factory.rate_limiter.invocations) == 1
+    assert "start_research:192.168.1.1" in factory.rate_limiter.invocations[0]["key"]
+
+
+def test_start_research_controller_rate_limit_exceeded():
+    factory = MockInfrastructureFactory(allow_rate_limit=False)
+    controller = StartResearchController(factory=factory)
+
+    dto = StartResearchInputDTO(topic="AI in Healthcare")
+    result = controller.run(dto, ctx=Metadata(user="192.168.1.1", ip="192.168.1.1"))
+
+    assert result.is_err() is True
+    assert result.error.err_type == "rate_limit" or result.error.code == "rate_limit"
 
 
 def test_start_research_controller_validation_error():
@@ -102,11 +131,24 @@ def test_get_research_status_controller_in_progress():
     controller = GetResearchStatusController(factory=factory)
 
     dto = GetResearchStatusInputDTO(job_id="non-existent-job")
-    result = controller.run(dto)
+    result = controller.run(dto, ctx=Metadata(user="10.0.0.1", ip="10.0.0.1"))
 
     assert result.is_ok() is True
     assert result.value.status == "IN_PROGRESS"
     assert result.value.s3_report_url is None
+    assert len(factory.rate_limiter.invocations) == 1
+    assert "get_status:non-existent-job:10.0.0.1" in factory.rate_limiter.invocations[0]["key"]
+
+
+def test_get_research_status_controller_rate_limit_exceeded():
+    factory = MockInfrastructureFactory(allow_rate_limit=False)
+    controller = GetResearchStatusController(factory=factory)
+
+    dto = GetResearchStatusInputDTO(job_id="job-123")
+    result = controller.run(dto, ctx=Metadata(user="10.0.0.1", ip="10.0.0.1"))
+
+    assert result.is_err() is True
+    assert result.error.err_type == "rate_limit" or result.error.code == "rate_limit"
 
 
 def test_get_research_status_controller_completed():
@@ -133,4 +175,3 @@ def test_execute_research_worker_controller_success():
     assert result.value.status == "SUCCESS"
     assert result.value.s3_key == "reports/job-999.md"
     assert "job-999" in factory.storage.reports
-

@@ -9,7 +9,7 @@ from app.aws.handlers.start_research_handler import lambda_handler as start_hand
 from app.aws.handlers.get_research_status_handler import lambda_handler as status_handler
 from app.aws.handlers.execute_research_worker_handler import lambda_handler as worker_handler
 from context.kit.dtos.result import Result
-from context.kit.errors import ValidationError
+from context.kit.errors.rate_limit_error import new_rate_limit_error
 from context.research.application.dtos.start_research_dto import StartResearchOutputDTO
 from context.research.application.dtos.get_research_status_dto import GetResearchStatusOutputDTO
 from context.research.application.dtos.execute_research_worker_dto import ExecuteResearchWorkerOutputDTO
@@ -54,7 +54,11 @@ def test_start_research_handler_success(mock_run):
     )
 
     event = {
-        "body": json.dumps({"topic": "Serverless Architecture", "depth": "detailed"})
+        "body": json.dumps({"topic": "Serverless Architecture", "depth": "detailed"}),
+        "requestContext": {
+            "identity": {"sourceIp": "192.168.1.50"},
+            "requestId": "req-123"
+        }
     }
     context = DummyLambdaContext()
     response = start_handler(event, context)
@@ -63,6 +67,27 @@ def test_start_research_handler_success(mock_run):
     body = json.loads(response["body"])
     assert body["job_id"] == "job-123"
     assert body["status"] == "IN_PROGRESS"
+
+
+@patch("app.aws.handlers.start_research_handler._controller.run")
+def test_start_research_handler_rate_limit(mock_run):
+    mock_run.return_value = Result.err(
+        new_rate_limit_error(key="start_research:192.168.1.50", limit=5, window_ms=60000)
+    )
+
+    event = {
+        "body": json.dumps({"topic": "AI in Cloud"}),
+        "requestContext": {
+            "identity": {"sourceIp": "192.168.1.50"},
+            "requestId": "req-123"
+        }
+    }
+    context = DummyLambdaContext()
+    response = start_handler(event, context)
+
+    assert response["statusCode"] == 429
+    body = json.loads(response["body"])
+    assert body.get("type") == "rate_limit" or body.get("code") == "rate_limit"
 
 
 def test_get_research_status_handler_missing_param():
@@ -83,7 +108,13 @@ def test_get_research_status_handler_success(mock_run):
         )
     )
 
-    event = {"pathParameters": {"job_id": "job-123"}}
+    event = {
+        "pathParameters": {"job_id": "job-123"},
+        "requestContext": {
+            "identity": {"sourceIp": "10.0.0.1"},
+            "requestId": "req-456"
+        }
+    }
     context = DummyLambdaContext()
     response = status_handler(event, context)
 
@@ -91,6 +122,27 @@ def test_get_research_status_handler_success(mock_run):
     body = json.loads(response["body"])
     assert body["status"] == "COMPLETED"
     assert "https://s3.amazonaws.com" in body["s3_report_url"]
+
+
+@patch("app.aws.handlers.get_research_status_handler._controller.run")
+def test_get_research_status_handler_rate_limit(mock_run):
+    mock_run.return_value = Result.err(
+        new_rate_limit_error(key="get_status:job-123:10.0.0.1", limit=30, window_ms=60000)
+    )
+
+    event = {
+        "pathParameters": {"job_id": "job-123"},
+        "requestContext": {
+            "identity": {"sourceIp": "10.0.0.1"},
+            "requestId": "req-456"
+        }
+    }
+    context = DummyLambdaContext()
+    response = status_handler(event, context)
+
+    assert response["statusCode"] == 429
+    body = json.loads(response["body"])
+    assert body.get("type") == "rate_limit" or body.get("code") == "rate_limit"
 
 
 @patch("app.aws.handlers.execute_research_worker_handler._controller.run")

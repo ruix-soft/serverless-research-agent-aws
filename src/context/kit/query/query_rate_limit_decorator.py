@@ -36,14 +36,16 @@ class QueryRateLimitDecorator(Generic[I, O], Query[I, O]):
         self._options = options
 
     def query_type(self) -> str:
-        t = self._base.query_type()
+        t = self._base.query_type() if hasattr(self._base, "query_type") else ""
         return t if t else "QueryRateLimitDecorator"
 
     def metadata(self) -> Optional[Metadata]:
-        return self._base.metadata()
+        if hasattr(self._base, "metadata"):
+            return self._base.metadata()
+        return None
 
     def execute(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
-        meta = self.metadata()
+        meta = ctx if isinstance(ctx, Metadata) else self.metadata()
         key = self._options.key_resolver(payload, self.query_type(), meta)
 
         try:
@@ -63,7 +65,20 @@ class QueryRateLimitDecorator(Generic[I, O], Query[I, O]):
             )
             return Result.err(rl_err)
 
-        return self._base.execute(payload, ctx)
+        if hasattr(self._base, "execute"):
+            try:
+                return self._base.execute(payload, ctx)
+            except TypeError:
+                return self._base.execute(payload)
+        elif hasattr(self._base, "handle"):
+            try:
+                return self._base.handle(payload, ctx)
+            except TypeError:
+                return self._base.handle(payload)
+        raise AttributeError("Wrapped query handler has neither execute nor handle method")
+
+    def handle(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
+        return self.execute(payload, ctx)
 
 
 def new_query_rate_limit_decorator(
@@ -80,4 +95,3 @@ def NewQueryRateLimitDecorator(
     options: QueryRateLimitOptions[I],
 ) -> QueryRateLimitDecorator[I, O]:
     return new_query_rate_limit_decorator(base, limiter, options)
-

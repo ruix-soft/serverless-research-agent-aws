@@ -2,11 +2,15 @@ from typing import Optional, Any
 from app.controllers.base import ICommandHandler, BaseController
 from app.controllers.decorators.logging_decorator import LoggingDecorator
 from app.controllers.decorators.metrics_decorator import MetricsDecorator
+from context.kit.command.command_rate_limit_decorator import (
+    CommandRateLimitDecorator,
+    RateLimitOptions,
+)
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError
 from context.research.application.dtos.start_research_dto import (
     StartResearchInputDTO,
-    StartResearchOutputDTO
+    StartResearchOutputDTO,
 )
 from context.research.application.use_cases.start_research_use_case import StartResearchUseCase
 from context.research.domain.ports import IInfrastructureFactory
@@ -30,12 +34,18 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
     Follows arch-core strict sequential construction:
     1. Instantiate Use Case using InfrastructureFactory.
     2. Wrap Use Case in CommandHandler.
-    3. Retrieve generic observability tools.
-    4. Stack behavior decorators (LoggingDecorator, MetricsDecorator).
-    5. Expose run(dto) -> Result.
+    3. Apply Rate Limiter Decorator (DynamoDB backed).
+    4. Retrieve generic observability tools.
+    5. Stack behavior decorators (LoggingDecorator, MetricsDecorator).
+    6. Expose run(dto, ctx) -> Result.
     """
 
-    def __init__(self, factory: Optional[IInfrastructureFactory] = None):
+    def __init__(
+        self,
+        factory: Optional[IInfrastructureFactory] = None,
+        rate_limit: int = 1, # 1 request per minute
+        rate_window_ms: int = 60000, # 1 minute window
+    ):
         factory = factory or InfrastructureFactory()
 
         # 1. Instantiate Use Case
@@ -44,13 +54,28 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
         # 2. Wrap in CommandHandler
         command_handler = StartResearchCommandHandler(use_case)
 
-        # 3. Retrieve observability tools
+        # 3. Apply Rate Limiter Decorator
+        limiter = factory.create_rate_limiter()
+        rate_limit_options = RateLimitOptions[StartResearchInputDTO](
+            limit=rate_limit,
+            window_ms=rate_window_ms,
+            key_resolver=lambda payload, cmd_type, meta: (
+                f"start_research:{meta.ip if meta and meta.ip else (meta.user if meta and meta.user else 'global')}"
+            ),
+        )
+        rate_limited_handler = CommandRateLimitDecorator(
+            base=command_handler,
+            limiter=limiter,
+            options=rate_limit_options,
+        )
+
+        # 4. Retrieve observability tools
         logger = factory.create_logger()
         metrics = factory.create_metrics()
 
-        # 4. Stack decorators
-        logging_decorated = LoggingDecorator(command_handler, logger=logger, handler_name="StartResearchCommandHandler")
+        # 5. Stack decorators
+        logging_decorated = LoggingDecorator(rate_limited_handler, logger=logger, handler_name="StartResearchCommandHandler")
         metrics_decorated = MetricsDecorator(logging_decorated, metrics=metrics, metric_namespace="StartResearch")
 
-        # 5. Initialize base controller
+        # 6. Initialize base controller
         super().__init__(metrics_decorated)

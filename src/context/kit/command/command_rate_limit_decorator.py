@@ -36,14 +36,16 @@ class CommandRateLimitDecorator(Generic[I, O], Handler[I, O]):
         self._options = options
 
     def command_type(self) -> str:
-        t = self._base.command_type()
+        t = self._base.command_type() if hasattr(self._base, "command_type") else ""
         return t if t else "CommandRateLimitDecorator"
 
     def metadata(self) -> Optional[Metadata]:
-        return self._base.metadata()
+        if hasattr(self._base, "metadata"):
+            return self._base.metadata()
+        return None
 
     def execute(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
-        meta = self.metadata()
+        meta = ctx if isinstance(ctx, Metadata) else self.metadata()
         key = self._options.key_resolver(payload, self.command_type(), meta)
 
         try:
@@ -63,7 +65,20 @@ class CommandRateLimitDecorator(Generic[I, O], Handler[I, O]):
             )
             return Result.err(rl_err)
 
-        return self._base.execute(payload, ctx)
+        if hasattr(self._base, "execute"):
+            try:
+                return self._base.execute(payload, ctx)
+            except TypeError:
+                return self._base.execute(payload)
+        elif hasattr(self._base, "handle"):
+            try:
+                return self._base.handle(payload, ctx)
+            except TypeError:
+                return self._base.handle(payload)
+        raise AttributeError("Wrapped handler has neither execute nor handle method")
+
+    def handle(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
+        return self.execute(payload, ctx)
 
 
 def new_command_rate_limit_decorator(
@@ -80,4 +95,3 @@ def NewCommandRateLimitDecorator(
     options: RateLimitOptions[I],
 ) -> CommandRateLimitDecorator[I, O]:
     return new_command_rate_limit_decorator(base, limiter, options)
-
