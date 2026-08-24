@@ -277,6 +277,263 @@ Resources:
                 - "arn:aws:bedrock:*::foundation-model/*"
                 - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
 
+  # 8. Dashboard Unificado de Operaciones, FinOps y Observabilidad en CloudWatch
+  ResearchAgentDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "Serverless-Research-Agent-${AWS::Region}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 2,
+              "properties": {
+                "markdown": "# 🤖 Serverless AI Research Agent — Executive & Operational Dashboard\n**Región:** ${AWS::Region} | **Entorno:** Producción | **Metodología de Arquitectura:** Luis Ruiz (arch-core)"
+              }
+            },
+            {
+              "type": "text",
+              "x": 0,
+              "y": 2,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "### 💰 1. FinOps & Consumo de IA (Amazon Bedrock Tokens)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Bedrock", "InputTokenCount", { "stat": "Sum", "label": "Tokens Entrada (Prompt)", "color": "#1f77b4" } ],
+                  [ ".", "OutputTokenCount", { "stat": "Sum", "label": "Tokens Salida (Generación)", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Consumo de Tokens en Amazon Bedrock",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Bedrock", "Invocations", { "stat": "Sum", "label": "Invocaciones Bedrock", "color": "#2ca02c" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Invocaciones del Modelo LLM (Claude)",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ { "expression": "((m1 / 1000) * 0.003) + ((m2 / 1000) * 0.015)", "label": "Costo Estimado Bedrock ($ USD)", "id": "e1", "color": "#d62728" } ],
+                  [ "AWS/Bedrock", "InputTokenCount", { "id": "m1", "visible": false, "stat": "Sum" } ],
+                  [ "AWS/Bedrock", "OutputTokenCount", { "id": "m2", "visible": false, "stat": "Sum" } ]
+                ],
+                "view": "singleValue",
+                "region": "${AWS::Region}",
+                "title": "Costo Acumulado Estimado (FinOps)",
+                "period": 86400
+              }
+            },
+            {
+              "type": "text",
+              "x": 0,
+              "y": 9,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "### 📈 2. Métricas de Negocio & Casos de Uso (Powertools EMF)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 10,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "ResearchAgent", "invocations", "service", "serverless-research-agent", "command", "StartResearchCommand", { "stat": "Sum", "label": "StartResearch (Commands)" } ],
+                  [ "...", "ExecuteResearchWorkerCommand", { "stat": "Sum", "label": "ExecuteWorker (Commands)" } ],
+                  [ "ResearchAgent", "invocations", "service", "serverless-research-agent", "query", "GetResearchStatusQuery", { "stat": "Sum", "label": "GetStatus (Queries)" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Invocaciones por Caso de Uso (CQRS)",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 10,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "ResearchAgent", "latency", "service", "serverless-research-agent", "command", "StartResearchCommand", { "stat": "p90", "label": "p90 StartResearch" } ],
+                  [ "...", "ExecuteResearchWorkerCommand", { "stat": "p90", "label": "p90 ExecuteWorker" } ],
+                  [ "ResearchAgent", "latency", "service", "serverless-research-agent", "query", "GetResearchStatusQuery", { "stat": "p90", "label": "p90 GetStatus" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Latencia p90 por Caso de Uso (ms)",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 10,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "ResearchAgent", "errors", "service", "serverless-research-agent", "command", "StartResearchCommand", { "stat": "Sum", "label": "Errores StartResearch", "color": "#d62728" } ],
+                  [ "...", "ExecuteResearchWorkerCommand", { "stat": "Sum", "label": "Errores ExecuteWorker", "color": "#ff9896" } ],
+                  [ "ResearchAgent", "errors", "service", "serverless-research-agent", "query", "GetResearchStatusQuery", { "stat": "Sum", "label": "Errores GetStatus", "color": "#9467bd" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Errores de Dominio / Infraestructura",
+                "period": 60
+              }
+            },
+            {
+              "type": "text",
+              "x": 0,
+              "y": 16,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "### ⚡ 3. Infraestructura Serverless & Orquestación (Step Functions + Lambda + API Gateway)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 17,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/States", "ExecutionsSucceeded", "StateMachineArn", "${ResearchStateMachine}", { "stat": "Sum", "label": "Éxitos SFN", "color": "#2ca02c" } ],
+                  [ ".", "ExecutionsFailed", ".", ".", { "stat": "Sum", "label": "Fallos SFN", "color": "#d62728" } ],
+                  [ ".", "ExecutionsTimedOut", ".", ".", { "stat": "Sum", "label": "Timeouts SFN", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Ejecuciones Step Functions",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 17,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${StartResearchFunction}", { "stat": "Average", "label": "Avg Dur StartFn" } ],
+                  [ ".", ".", "FunctionName", "${GetResearchStatusFunction}", { "stat": "Average", "label": "Avg Dur StatusFn" } ],
+                  [ ".", ".", "FunctionName", "${ExecuteResearchWorkerFunction}", { "stat": "Average", "label": "Avg Dur WorkerFn" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Duración Promedio Lambdas (ms)",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 17,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "${ServerlessRestApi}", { "stat": "Sum", "label": "Total Requests" } ],
+                  [ ".", "4XXError", ".", ".", { "stat": "Sum", "label": "4xx Errors (inc. 429)", "color": "#ff7f0e" } ],
+                  [ ".", "5XXError", ".", ".", { "stat": "Sum", "label": "5xx Server Errors", "color": "#d62728" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Peticiones y Errores API Gateway",
+                "period": 60
+              }
+            },
+            {
+              "type": "text",
+              "x": 0,
+              "y": 23,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "### 🛡️ 4. Rate Limiting & Persistencia (DynamoDB + S3)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 24,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${JobsTable}", { "stat": "Sum", "label": "RCU JobsTable" } ],
+                  [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "label": "WCU JobsTable" } ],
+                  [ ".", "ConsumedReadCapacityUnits", "TableName", "${RateLimitsTable}", { "stat": "Sum", "label": "RCU RateLimitsTable" } ],
+                  [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "label": "WCU RateLimitsTable" } ]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "title": "Consumo DynamoDB (RCU / WCU)",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 24,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/S3", "NumberOfObjects", "BucketName", "${ReportsBucket}", "StorageType", "AllStorageTypes", { "stat": "Average", "label": "Reportes Almacenados" } ],
+                  [ ".", "BucketSizeBytes", ".", ".", ".", ".", { "stat": "Average", "label": "Tamaño Total Bucket (Bytes)" } ]
+                ],
+                "view": "singleValue",
+                "region": "${AWS::Region}",
+                "title": "Almacenamiento en S3 (Reports)",
+                "period": 86400
+              }
+            }
+          ]
+        }
+
 Outputs:
   ResearchApiEndpoint:
     Description: "URL base para invocar la API del Agente Investigador"
@@ -293,3 +550,6 @@ Outputs:
   StateMachineArn:
     Description: "ARN de la máquina de estados de Step Functions"
     Value: !Ref ResearchStateMachine
+  DashboardName:
+    Description: "Nombre del Dashboard Unificado en Amazon CloudWatch"
+    Value: !Ref ResearchAgentDashboard

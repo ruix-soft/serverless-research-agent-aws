@@ -368,3 +368,45 @@ flowchart TD
 - **`StepLoggingDecorator`:** Genera logs estructurados JSON con el ciclo de vida del handler (`Handling...`, duración, `Handled successfully.`).
 - **`CommandMetricsDecorator` & `QueryMetricsDecorator`:** Emiten métricas automáticas en formato EMF (*Embedded Metric Format*) hacia CloudWatch (`invocations`, `errors`, `latency`) agrupadas por la dimensión del comando o consulta.
 - **Service Map & ServiceLens:** Visualización en vivo en la consola de AWS CloudWatch de todos los nodos interconectados con estados de salud y latencias en tiempo real.
+
+---
+
+## 7. Tablero Unificado de FinOps, Operaciones y Métricas de IA en Amazon CloudWatch (IaC)
+
+La infraestructura aprovisiona un recurso unificado `AWS::CloudWatch::Dashboard` denominado `Serverless-Research-Agent-${AWS::Region}` que consolida cuatro cuadrantes estratégicos de observabilidad:
+
+```mermaid
+flowchart TD
+    subgraph Dashboard ["🖥️ Amazon CloudWatch Dashboard: Serverless-Research-Agent"]
+        direction TB
+        
+        subgraph S1 ["💰 1. SECCIÓN FINOPS & CONSUMO DE IA (Amazon Bedrock)"]
+            W1["Tokens Entrada (Prompt) vs Salida (Generación)"]
+            W2["Invocaciones de Claude Sonnet"]
+            W3["Costo Acumulado Estimado ($ USD)"]
+        end
+
+        subgraph S2 ["📈 2. SECCIÓN CASOS DE USO Y NEGOCIO (Powertools EMF)"]
+            W4["Invocaciones por Comando/Query (CQRS)"]
+            W5["Latencia p90 por Caso de Uso (ms)"]
+            W6["Errores de Dominio / Infraestructura"]
+        end
+
+        subgraph S3 ["⚡ 3. SECCIÓN SERVERLESS & ORQUESTACIÓN (Step Functions + Lambda + API GW)"]
+            W7["Ejecuciones Exitosas vs Fallidas en Step Functions"]
+            W8["Duración Promedio de Lambdas (ms)"]
+            W9["Peticiones y Errores 4xx/5xx en API Gateway"]
+        end
+
+        subgraph S4 ["🛡️ 4. SECCIÓN RATE LIMITING & PERSISTENCIA (DynamoDB + S3)"]
+            W10["Consumo RCU / WCU (JobsTable & RateLimitsTable)"]
+            W11["Total de Reportes y Tamaño Almacenado en Amazon S3"]
+        end
+    end
+```
+
+### Cuadrantes del Tablero:
+1. **FinOps & Tokens de IA:** Mide el consumo de tokens de entrada/salida de Amazon Bedrock y calcula el costo proyectado en USD mediante expresiones métricas en tiempo real.
+2. **Métricas de Casos de Uso (CQRS):** Visualiza invocaciones, latencias en percentil 90 ($p90$) y conteo de errores emitidos en formato EMF por `CommandMetricsDecorator` y `QueryMetricsDecorator`.
+3. **Salud Serverless & Orquestación:** Rastrea ejecuciones exitosas y fallidas de AWS Step Functions, duración promedio de las funciones Lambda y tasas de error 4xx/5xx en API Gateway.
+4. **Persistencia & Rate Limiting:** Monitorea el consumo de capacidad (RCU/WCU) de las tablas DynamoDB y el crecimiento de archivos en Amazon S3.

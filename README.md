@@ -143,7 +143,8 @@ serverless-research-agent-aws/
 │       ├── 0004-distributed-rate-limiting-with-dynamodb.md
 │       ├── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
 │       ├── 0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md
-│       └── 0007-end-to-end-distributed-tracing-and-observability-with-aws-xray.md
+│       ├── 0007-end-to-end-distributed-tracing-and-observability-with-aws-xray.md
+│       └── 0008-unified-finops-operational-and-ai-observability-dashboard.md
 │
 ├── tests/                                # SUITE INTEGRAL DE PRUEBAS (118 Tests)
 │   ├── test_controllers.py
@@ -169,10 +170,47 @@ serverless-research-agent-aws/
 2. **Segregación de Responsabilidad de Comandos y Consultas (CQRS):** Separación limpia entre comandos que alteran estado (`CommandHandler`) y lecturas de datos ultrarrápidas (`QueryHandler`).
 3. **Cadena de Responsabilidad (Chain of Responsibility):** Todos los casos de uso se ejecutan como un pipeline secuencial de pasos atómicos (`Step[I, O, C]`) que operan sobre un contexto compartido (`Context`).
 4. **Trazabilidad Distribuida y Observabilidad Activa (AWS X-Ray + Powertools):** Trazabilidad de extremo a extremo propagando el `X-Amzn-Trace-Id` desde API Gateway hacia Lambdas y Step Functions, con subsegmentos automáticos para cada paso de la cadena (`StepTracingDecorator`), métricas en formato EMF (`CommandMetricsDecorator` / `QueryMetricsDecorator`) y logs estructurados (`StepLoggingDecorator`).
-5. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
-6. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
-7. **Autenticación sin Claves Estáticas (OpenID Connect - OIDC):** Despliegues seguros de CI/CD asumiendo roles temporales en AWS STS.
-8. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
+5. **Dashboard Unificado de FinOps & Operaciones (CloudWatch IaC):** Visualización centralizada de consumo de tokens en Amazon Bedrock, costos estimados en USD, latencias p90 y salud serverless.
+6. **Patrón Saga / Orquestador Distribuido (AWS Step Functions):** Resiliencia garantizada con reintentos exponenciales automáticos y capturas de excepciones a nivel de infraestructura.
+7. **Control de Tasa Distribuido (Rate Limiting Decorator):** Decoradores CQRS respaldados por DynamoDB y TTL para protección contra abusos y ataques *Denial of Wallet*.
+8. **Autenticación sin Claves Estáticas (OpenID Connect - OIDC):** Despliegues seguros de CI/CD asumiendo roles temporales en AWS STS.
+9. **Programación Orientada a Vías de Tren (Railway-Oriented Programming):** Todas las operaciones retornan instancias de `Result[O, DomainError]` eliminando excepciones no controladas en el flujo de negocio.
+
+---
+
+## 📊 Tablero Unificado de FinOps & Operaciones en Amazon CloudWatch
+
+Desplegado automáticamente como Infraestructura como Código (`AWS::CloudWatch::Dashboard`), consolida 4 cuadrantes esenciales:
+
+```mermaid
+flowchart TD
+    subgraph Dashboard ["🖥️ Amazon CloudWatch Dashboard: Serverless-Research-Agent"]
+        direction TB
+        
+        subgraph S1 ["💰 1. SECCIÓN FINOPS & CONSUMO DE IA (Amazon Bedrock)"]
+            W1["Tokens Entrada (Prompt) vs Salida (Generación)"]
+            W2["Invocaciones de Claude Sonnet"]
+            W3["Costo Acumulado Estimado ($ USD)"]
+        end
+
+        subgraph S2 ["📈 2. SECCIÓN CASOS DE USO Y NEGOCIO (Powertools EMF)"]
+            W4["Invocaciones por Comando/Query (CQRS)"]
+            W5["Latencia p90 por Caso de Uso (ms)"]
+            W6["Errores de Dominio / Infraestructura"]
+        end
+
+        subgraph S3 ["⚡ 3. SECCIÓN SERVERLESS & ORQUESTACIÓN (Step Functions + Lambda + API GW)"]
+            W7["Ejecuciones Exitosas vs Fallidas en Step Functions"]
+            W8["Duración Promedio de Lambdas (ms)"]
+            W9["Peticiones y Errores 4xx/5xx en API Gateway"]
+        end
+
+        subgraph S4 ["🛡️ 4. SECCIÓN RATE LIMITING & PERSISTENCIA (DynamoDB + S3)"]
+            W10["Consumo RCU / WCU (JobsTable & RateLimitsTable)"]
+            W11["Total de Reportes y Tamaño Almacenado en Amazon S3"]
+        end
+    end
+```
 
 ---
 
@@ -280,3 +318,4 @@ sam deploy --guided
 - 🏛️ [**ADR 0005:** Solución Híbrida: Orquestación Resiliente con AWS Step Functions y Persistencia en DynamoDB](docs/adr/0005-hybrid-step-functions-and-dynamodb-orchestration.md)
 - 🏛️ [**ADR 0006:** CI/CD Enterprise con GitHub Actions y Autenticación OIDC (Zero Static Secrets)](docs/adr/0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md)
 - 🏛️ [**ADR 0007:** Trazabilidad Distribuida de Extremo a Extremo con AWS X-Ray y Decoradores de Cadena](docs/adr/0007-end-to-end-distributed-tracing-and-observability-with-aws-xray.md)
+- 🏛️ [**ADR 0008:** Tablero Unificado de FinOps, Operaciones y Observabilidad de IA en Amazon CloudWatch](docs/adr/0008-unified-finops-operational-and-ai-observability-dashboard.md)
