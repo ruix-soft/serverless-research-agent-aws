@@ -49,6 +49,9 @@ class CommandMetricsDecorator(Generic[I, O], Handler[I, O]):
             except Exception:
                 pass
 
+    def handle(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
+        return self.execute(payload, ctx)
+
 
 def new_command_metrics_decorator(base: Handler[I, O], metrics: MetricsService) -> CommandMetricsDecorator[I, O]:
     return CommandMetricsDecorator(base, metrics)

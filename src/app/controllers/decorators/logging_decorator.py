@@ -16,6 +16,24 @@ class LoggingDecorator(IHandler[InputDTO, OutputDTO]):
         self._logger = logger
         self._handler_name = handler_name or handler.__class__.__name__
 
+    def command_type(self) -> str:
+        if hasattr(self._handler, "command_type"):
+            return self._handler.command_type()
+        return self._handler_name
+
+    def query_type(self) -> str:
+        if hasattr(self._handler, "query_type"):
+            return self._handler.query_type()
+        return self._handler_name
+
+    def metadata(self) -> Optional[Any]:
+        if hasattr(self._handler, "metadata"):
+            return self._handler.metadata()
+        return None
+
+    def execute(self, payload: InputDTO, ctx: Optional[Any] = None) -> Result[OutputDTO, DomainError]:
+        return self.handle(payload, ctx)
+
     def handle(self, input_dto: InputDTO, ctx: Optional[Any] = None) -> Result[OutputDTO, DomainError]:
         start_time = time.perf_counter()
         if hasattr(self._logger, "info"):

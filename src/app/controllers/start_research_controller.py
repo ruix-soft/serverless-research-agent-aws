@@ -1,7 +1,7 @@
 from typing import Optional, Any
 from app.controllers.base import ICommandHandler, BaseController
 from app.controllers.decorators.logging_decorator import LoggingDecorator
-from app.controllers.decorators.metrics_decorator import MetricsDecorator
+from context.kit.command.command_metrics_decorator import CommandMetricsDecorator
 from context.kit.command.command_rate_limit_decorator import (
     CommandRateLimitDecorator,
     RateLimitOptions,
@@ -36,7 +36,7 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
     2. Wrap Use Case in CommandHandler.
     3. Apply Rate Limiter Decorator (DynamoDB backed).
     4. Retrieve generic observability tools.
-    5. Stack behavior decorators (LoggingDecorator, MetricsDecorator).
+    5. Stack behavior decorators (LoggingDecorator, CommandMetricsDecorator).
     6. Expose run(dto, ctx) -> Result.
     """
 
@@ -81,7 +81,7 @@ class StartResearchController(BaseController[StartResearchInputDTO, StartResearc
 
         # 5. Stack decorators
         logging_decorated = LoggingDecorator(rate_limited_handler, logger=logger, handler_name="StartResearchCommandHandler")
-        metrics_decorated = MetricsDecorator(logging_decorated, metrics=metrics, metric_namespace="StartResearch")
+        metrics_decorated = CommandMetricsDecorator(base=logging_decorated, metrics=metrics)
 
         # 6. Initialize base controller
         super().__init__(metrics_decorated)

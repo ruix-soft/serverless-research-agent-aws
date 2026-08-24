@@ -4,7 +4,7 @@ import json
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Union
 from context.research.domain.ports import (
     IInfrastructureFactory,
     IReportStoragePort,
@@ -102,8 +102,22 @@ class MockLogger(ILoggerPort, LoggerService):
         self.logs.append({"level": "ERROR", "message": message, "err": err, "details": details, **kwargs})
 
 
-class MockMetrics(IMetricsPort):
-    def add_metric(self, name: str, unit: str, value: float) -> None: pass
+from context.kit.service.metrics_service import MetricsService
+
+
+class MockMetrics(IMetricsPort, MetricsService):
+    def __init__(self):
+        self.metrics = []
+        self.dimensions = {}
+
+    def add_dimension(self, name: str, value: str) -> None:
+        self.dimensions[name] = value
+
+    def add_metric(self, name: str, unit: Any, value: Union[int, float]) -> None:
+        self.metrics.append({"name": name, "unit": unit, "value": value})
+
+    def publish_stored_metrics(self, ctx: Optional[Any] = None) -> None:
+        pass
 
 
 class MockSegment(Segment):
@@ -334,3 +348,36 @@ def test_chain_step_tracing_injected_from_controller():
     # Verify all subsegments were closed properly
     for sub in factory.tracer.root_segment.subsegments:
         assert sub.closed is True
+
+
+def test_command_metrics_decorator_records_metrics():
+    factory = MockInfrastructureFactory()
+    controller = StartResearchController(factory=factory)
+
+    dto = StartResearchInputDTO(topic="AI Metrics Test")
+    result = controller.run(dto, ctx=Metadata(user="metric_user", ip="127.0.0.1"))
+
+    assert result.is_ok() is True
+    # Verify dimensions and metrics were recorded
+    assert factory.metrics.dimensions.get("command") == "StartResearchCommand"
+    metric_names = [m["name"] for m in factory.metrics.metrics]
+    assert "invocations" in metric_names
+    assert "latency" in metric_names
+
+
+def test_query_metrics_decorator_records_metrics():
+    factory = MockInfrastructureFactory()
+    job_id = "77777777-7777-7777-7777-777777777777"
+    job = ResearchJob.create(topic="Query Metrics", id=job_id)
+    factory.job_repo.save(job)
+
+    controller = GetResearchStatusController(factory=factory)
+    dto = GetResearchStatusInputDTO(job_id=job_id)
+    result = controller.run(dto)
+
+    assert result.is_ok() is True
+    # Verify dimensions and metrics were recorded
+    assert factory.metrics.dimensions.get("query") == "GetResearchStatusQuery"
+    metric_names = [m["name"] for m in factory.metrics.metrics]
+    assert "invocations" in metric_names
+    assert "latency" in metric_names

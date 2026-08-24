@@ -1,7 +1,7 @@
 from typing import Optional, Any
 from app.controllers.base import ICommandHandler, BaseController
 from app.controllers.decorators.logging_decorator import LoggingDecorator
-from app.controllers.decorators.metrics_decorator import MetricsDecorator
+from context.kit.command.command_metrics_decorator import CommandMetricsDecorator
 from context.kit.dtos.result import Result
 from context.kit.errors.domain_error import DomainError
 from context.research.application.dtos.execute_research_worker_dto import (
@@ -31,8 +31,8 @@ class ExecuteResearchWorkerController(BaseController[ExecuteResearchWorkerInputD
     1. Instantiate Use Case using InfrastructureFactory.
     2. Wrap Use Case in CommandHandler.
     3. Retrieve generic observability tools.
-    4. Stack behavior decorators (LoggingDecorator, MetricsDecorator).
-    5. Expose run(dto) -> Result.
+    4. Stack behavior decorators (LoggingDecorator, CommandMetricsDecorator).
+    5. Expose run(dto, ctx) -> Result.
     """
 
     def __init__(self, factory: Optional[IInfrastructureFactory] = None):
@@ -56,7 +56,7 @@ class ExecuteResearchWorkerController(BaseController[ExecuteResearchWorkerInputD
 
         # 4. Stack decorators
         logging_decorated = LoggingDecorator(command_handler, logger=logger, handler_name="ExecuteResearchWorkerCommandHandler")
-        metrics_decorated = MetricsDecorator(logging_decorated, metrics=metrics, metric_namespace="ExecuteResearchWorker")
+        metrics_decorated = CommandMetricsDecorator(base=logging_decorated, metrics=metrics)
 
         # 5. Initialize base controller
         super().__init__(metrics_decorated)

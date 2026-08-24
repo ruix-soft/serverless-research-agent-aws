@@ -8,7 +8,7 @@
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet-darkblue.svg)](https://aws.amazon.com/bedrock/)
 [![OpenAPI 3.0](https://img.shields.io/badge/OpenAPI-3.0.3-brightgreen.svg)](docs/openapi.yaml)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%7C%20DDD%20%7C%20CQRS-green.svg)](docs/architecture.md)
-[![Tests](https://img.shields.io/badge/Tests-116%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-118%20Passing-brightgreen.svg)](tests/)
 
 Agente autónomo de investigación profunda impulsado por Inteligencia Artificial y construido bajo una arquitectura **100% Serverless-First en AWS**. Utiliza el patrón **ReAct (Reasoning + Acting)** en **Amazon Bedrock**, el framework **Strands Agents SDK**, búsquedas web en tiempo real con **Tavily API**, orquestación distribuida resiliente con **AWS Step Functions**, persistencia de estado con **Amazon DynamoDB** y **Amazon S3**, y despliegues continuos automatizados (**CI/CD**) mediante **GitHub Actions** y **OpenID Connect (AWS OIDC)**.
 
@@ -144,7 +144,7 @@ serverless-research-agent-aws/
 │       ├── 0005-hybrid-step-functions-and-dynamodb-orchestration.md
 │       └── 0006-enterprise-ci-cd-with-github-actions-and-aws-oidc.md
 │
-├── tests/                                # SUITE INTEGRAL DE PRUEBAS (116 Tests)
+├── tests/                                # SUITE INTEGRAL DE PRUEBAS (118 Tests)
 │   ├── test_controllers.py
 │   ├── test_handlers.py
 │   ├── test_decorators.py

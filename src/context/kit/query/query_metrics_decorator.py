@@ -49,6 +49,9 @@ class QueryMetricsDecorator(Generic[I, O], Query[I, O]):
             except Exception:
                 pass
 
+    def handle(self, payload: I, ctx: Optional[Any] = None) -> Result[O, DomainError]:
+        return self.execute(payload, ctx)
+
 
 def new_query_metrics_decorator(base: Query[I, O], metrics: MetricsService) -> QueryMetricsDecorator[I, O]:
     return QueryMetricsDecorator(base, metrics)
