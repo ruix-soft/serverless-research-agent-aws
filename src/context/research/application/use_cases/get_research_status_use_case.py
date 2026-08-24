@@ -106,7 +106,8 @@ class ResolvePresignedUrlStep(BaseChainStep[GetResearchStatusInputDTO, GetResear
         assert job is not None
 
         if job.is_completed() and self._report_storage:
-            s3_key = job.s3_key or f"reports/{job.id.value}.md"
+            job_id_str = job.id.value() if callable(getattr(job.id, "value", None)) else str(job.id)
+            s3_key = job.s3_key or f"reports/{job_id_str}.md"
             try:
                 presigned_url = self._report_storage.generate_presigned_url(s3_key, expiration_seconds=3600)
                 shared_context.presigned_url = presigned_url
@@ -131,26 +132,29 @@ class BuildGetStatusOutputStep(BaseChainStep[GetResearchStatusInputDTO, GetResea
         job = shared_context.job
         assert job is not None
 
+        job_id_str = job.id.value() if callable(getattr(job.id, "value", None)) else str(job.id)
+        topic_str = job.topic.value() if callable(getattr(job.topic, "value", None)) else str(job.topic)
+
         if job.is_completed():
             output = GetResearchStatusOutputDTO(
-                job_id=job.id.value,
-                topic=job.topic.value,
+                job_id=job_id_str,
+                topic=topic_str,
                 status="COMPLETED",
                 s3_report_url=shared_context.presigned_url,
                 message="Investigación completada exitosamente."
             )
         elif job.is_failed():
             output = GetResearchStatusOutputDTO(
-                job_id=job.id.value,
-                topic=job.topic.value,
+                job_id=job_id_str,
+                topic=topic_str,
                 status="FAILED",
                 error=job.error_message or "La investigación falló durante la ejecución.",
                 message="Ocurrió un error al procesar la investigación."
             )
         else:
             output = GetResearchStatusOutputDTO(
-                job_id=job.id.value,
-                topic=job.topic.value,
+                job_id=job_id_str,
+                topic=topic_str,
                 status="IN_PROGRESS",
                 message="La investigación se encuentra en progreso."
             )

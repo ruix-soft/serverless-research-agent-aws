@@ -210,3 +210,56 @@ def test_execute_research_worker_handler_success(mock_run):
 
     assert response["status"] == "SUCCESS"
     assert response["s3_key"] == "reports/worker-job-1.md"
+
+
+def test_get_research_status_handler_full_flow_with_dynamo():
+    from app.aws.handlers import get_research_status_handler
+    from context.research.infrastructure.dynamodb_job_repository_adapter import DynamoDBJobRepositoryAdapter
+    from app.controllers.get_research_status_controller import GetResearchStatusController
+    from context.research.domain.ports import IInfrastructureFactory
+
+    mock_dynamo = MagicMock()
+    mock_dynamo.get_item.return_value = {
+        "Item": {
+            "pk": {"S": "JOB#11111111-1111-1111-1111-111111111111"},
+            "id": {"S": "11111111-1111-1111-1111-111111111111"},
+            "topic": {"S": "Serverless AI"},
+            "status": {"S": "IN_PROGRESS"},
+            "created_at": {"S": "2026-08-24T14:00:00"},
+            "updated_at": {"S": "2026-08-24T14:00:00"}
+        }
+    }
+    mock_rate_limiter = MagicMock()
+    mock_rate_limiter.allow.return_value = True
+
+    class HandlerTestFactory(IInfrastructureFactory):
+        def create_report_storage(self): return MagicMock()
+        def create_job_repository(self): return DynamoDBJobRepositoryAdapter(dynamo_client=mock_dynamo)
+        def create_state_machine_invoker(self): return MagicMock()
+        def create_async_worker_invoker(self): return MagicMock()
+        def create_research_agent(self): return MagicMock()
+        def create_logger(self): return MagicMock()
+        def create_metrics(self): return MagicMock()
+        def create_rate_limiter(self): return mock_rate_limiter
+
+    real_controller = GetResearchStatusController(factory=HandlerTestFactory())
+    original_controller = get_research_status_handler._controller
+    try:
+        get_research_status_handler._controller = real_controller
+        event = {
+            "pathParameters": {"job_id": "11111111-1111-1111-1111-111111111111"},
+            "requestContext": {
+                "identity": {"sourceIp": "10.0.0.1"},
+                "requestId": "req-999"
+            }
+        }
+        context = DummyLambdaContext()
+        response = status_handler(event, context)
+        assert response["statusCode"] == 200
+        body = json.loads(response["body"])
+        assert body["job_id"] == "11111111-1111-1111-1111-111111111111"
+        assert body["status"] == "IN_PROGRESS"
+        assert body["topic"] == "Serverless AI"
+    finally:
+        get_research_status_handler._controller = original_controller
+

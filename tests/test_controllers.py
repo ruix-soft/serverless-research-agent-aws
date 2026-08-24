@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -168,6 +169,7 @@ def test_get_research_status_controller_in_progress():
     assert result.is_ok() is True
     assert result.value.status == "IN_PROGRESS"
     assert result.value.s3_report_url is None
+    assert json.dumps(result.value.to_dict()) is not None
     assert len(factory.rate_limiter.invocations) == 1
     assert f"get_status:{job_id}:10.0.0.1" in factory.rate_limiter.invocations[0]["key"]
 
@@ -187,6 +189,7 @@ def test_get_research_status_controller_completed():
     assert result.is_ok() is True
     assert result.value.status == "COMPLETED"
     assert "https://s3.amazonaws.com" in result.value.s3_report_url
+    assert json.dumps(result.value.to_dict()) is not None
 
 
 def test_get_research_status_controller_failed():
@@ -203,6 +206,7 @@ def test_get_research_status_controller_failed():
     assert result.is_ok() is True
     assert result.value.status == "FAILED"
     assert result.value.error == "Bedrock quota exceeded"
+    assert json.dumps(result.value.to_dict()) is not None
 
 
 def test_get_research_status_controller_not_found():
