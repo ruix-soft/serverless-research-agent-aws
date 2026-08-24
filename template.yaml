@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Research Agent powered by Strands Agents SDK, Amazon Bedrock and S3.
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 1024
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        REPORTS_BUCKET_NAME: !Ref ReportsBucket
+        BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        TAVILY_API_KEY: "{{resolve:ssm:/serverless-research-agent/tavily-api-key:1}}"
+
+Resources:
+  # 1. Bucket privado para almacenar los reportes de investigación
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "serverless-research-agent-reports-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # 2. Función Lambda del Agente Orquestador
+  ResearchAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      Policies:
+        # Permisos mínimos de lectura/escritura en S3
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+        # Permiso explícito para invocar modelos en Amazon Bedrock
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel*
+                - bedrock:InvokeModelWithResponseStream
+                - aws-marketplace:ViewSubscriptions
+                - aws-marketplace:Subscribe
+              Resource: "*"
+      Events:
+        # Endpoint REST HTTP en API Gateway
+        ResearchApi:
+          Type: Api
+          Properties:
+            Path: /research
+            Method: post
+
+Outputs:
+  ResearchApiEndpoint:
+    Description: "URL base para invocar la API del Agente Investigador"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/research"
+  ReportsBucketName:
+    Description: "Nombre del bucket de S3 creado para reportes"
+    Value: !Ref ReportsBucket
