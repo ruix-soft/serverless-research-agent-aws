@@ -39,13 +39,10 @@ Resources:
               Federated: !Ref GitHubOIDCProvider
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
-              StringLike:
-                token.actions.githubusercontent.com:sub:
-                  - !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
-                  - !Sub "repo:luisalbertoruiz/${RepositoryName}:*"
-                  - !Sub "repo:*${RepositoryName}:*"
               StringEquals:
                 token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
+              StringLike:
+                token.actions.githubusercontent.com:sub: "repo:*serverless-research-agent-aws:*"
       Policies:
         # 1. Permisos para CloudFormation y SAM CLI
         - PolicyName: SAMCloudFormationDeploymentPolicy
